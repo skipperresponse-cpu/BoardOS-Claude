@@ -2,26 +2,35 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Database, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Database, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react'
+
+type Op = 'seed' | 'unseed'
 
 export function AdminSeedClient() {
+  const [op, setOp] = useState<Op | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [log, setLog] = useState<string[]>([])
   const [showLog, setShowLog] = useState(false)
   const router = useRouter()
 
-  async function handleSeed() {
-    if (!confirm('This will insert demo board members, meetings, documents, action items, and approvals. Run now?')) return
+  async function run(operation: Op) {
+    const confirmMsg = operation === 'seed'
+      ? 'This will insert demo board members, meetings, documents, action items, and approvals. Run now?'
+      : 'This will permanently delete ALL meetings, action items, approvals, demo documents, and the 5 demo board member accounts. This cannot be undone. Continue?'
+    if (!confirm(confirmMsg)) return
+
+    setOp(operation)
     setStatus('loading')
     setMessage('')
     setLog([])
     try {
-      const res = await fetch('/api/admin/seed', { method: 'POST' })
+      const endpoint = operation === 'seed' ? '/api/admin/seed' : '/api/admin/unseed'
+      const res = await fetch(endpoint, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
         setStatus('error')
-        setMessage(data.error ?? 'Seed failed')
+        setMessage(data.error ?? `${operation} failed`)
       } else {
         setStatus('done')
         setMessage(data.message ?? 'Done')
@@ -33,6 +42,8 @@ export function AdminSeedClient() {
       setMessage('Network error')
     }
   }
+
+  const isLoading = status === 'loading'
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6">
@@ -46,16 +57,28 @@ export function AdminSeedClient() {
             Populate the database with realistic NRCS governance data: 5 board members, 9 documents, 8 meetings, 22 action items, and 4 approval proposals with votes.
           </p>
 
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
-              onClick={handleSeed}
-              disabled={status === 'loading'}
+              onClick={() => run('seed')}
+              disabled={isLoading}
               className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
             >
-              {status === 'loading' ? (
+              {isLoading && op === 'seed' ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Seeding… (may take 30–60s)</>
               ) : (
                 <><Database className="h-4 w-4" /> Run Seed</>
+              )}
+            </button>
+
+            <button
+              onClick={() => run('unseed')}
+              disabled={isLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60 transition-colors"
+            >
+              {isLoading && op === 'unseed' ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Clearing…</>
+              ) : (
+                <><Trash2 className="h-4 w-4" /> Clear Demo Data</>
               )}
             </button>
 
@@ -74,7 +97,7 @@ export function AdminSeedClient() {
           {log.length > 0 && (
             <div className="mt-3">
               <button onClick={() => setShowLog(v => !v)} className="text-xs text-slate-400 hover:text-slate-600">
-                {showLog ? 'Hide' : 'Show'} seed log ({log.length} entries)
+                {showLog ? 'Hide' : 'Show'} log ({log.length} entries)
               </button>
               {showLog && (
                 <pre className="mt-2 text-[10px] text-slate-500 bg-slate-50 rounded-lg p-3 max-h-48 overflow-y-auto font-mono">
@@ -85,7 +108,7 @@ export function AdminSeedClient() {
           )}
 
           <p className="text-xs text-slate-400 mt-3">
-            Safe to run again — duplicate meetings and documents are skipped automatically. Board member users are created once.
+            Seed is safe to run again — duplicates are skipped. Clear removes all demo data including board member accounts.
           </p>
         </div>
       </div>
