@@ -1,0 +1,325 @@
+'use client'
+
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { ACTION_STATUS_COLORS, formatDate, cn } from '@/lib/utils'
+import type { Meeting, ActionItem, ActionItemStatus, UserRole } from '@/types'
+import { Sparkles, Save, Plus, CheckSquare } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+
+interface Props {
+  meeting: Meeting
+  actionItems: ActionItem[]
+  profiles: Array<{ id: string; full_name: string }>
+  userRole: UserRole
+  currentProfileId: string
+}
+
+export function MeetingDetailClient({ meeting, actionItems: initialItems, profiles, userRole, currentProfileId }: Props) {
+  const [activeTab, setActiveTab] = useState<'transcript' | 'minutes' | 'actions'>('minutes')
+  const [transcript, setTranscript] = useState(meeting.transcript_text ?? '')
+  const [draftMinutes, setDraftMinutes] = useState(meeting.draft_minutes ?? '')
+  const [finalMinutes, setFinalMinutes] = useState(meeting.final_minutes ?? '')
+  const [actionItems, setActionItems] = useState(initialItems)
+  const [generatingMinutes, setGeneratingMinutes] = useState(false)
+  const [savingMinutes, setSavingMinutes] = useState(false)
+  const [approvingMinutes, setApprovingMinutes] = useState(false)
+  const [showAddAction, setShowAddAction] = useState(false)
+  const [newAction, setNewAction] = useState({ title: '', description: '', owner_user_id: '', due_date: '' })
+  const [savingAction, setSavingAction] = useState(false)
+  const router = useRouter()
+  const supabase = createClient()
+
+  const isAdmin = userRole === 'admin'
+
+  async function generateMinutes() {
+    setGeneratingMinutes(true)
+    const agenda = (meeting.agenda_json as Array<{ title: string }>)
+      ?.map((a) => a.title).join('\n') ?? ''
+
+    const res = await fetch('/api/ai/minutes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript,
+        agenda,
+        meetingDetails: {
+          title: meeting.title,
+          date: meeting.meeting_date,
+          attendees: meeting.attendees_json ?? [],
+          absentees: meeting.absentees_json ?? [],
+        },
+      }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      setDraftMinutes(data.minutes)
+
+      // Save extracted action items
+      if (data.actionItems?.length) {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { data: profile } = await supabase.from('profiles').select('id').eq('user_id', user!.id).single()
+
+        for (const ai of data.actionItems) {
+          const ownerProfile = ai.owner
+            ? profiles.find((p) => p.full_name.toLowerCase().includes(ai.owner.toLowerCase()))
+            : null
+
+          await supabase.from('action_items').insert({
+            meeting_id: meeting.id,
+            title: ai.title,
+            description: ai.description,
+            owner_user_id: ownerProfile?.id ?? null,
+            due_date: ai.due_date ?? null,
+            status: 'Not Started',
+          })
+        }
+        router.refresh()
+      }
+
+      // Save transcript and draft
+      await supabase.from('meetings').update({
+        transcript_text: transcript,
+        draft_minutes: data.minutes,
+        status: 'draft_minutes',
+      }).eq('id', meeting.id)
+    }
+    setGeneratingMinutes(false)
+  }
+
+  async function saveMinutes() {
+    setSavingMinutes(true)
+    await supabase.from('meetings').update({
+      transcript_text: transcript,
+      draft_minutes: draftMinutes,
+    }).eq('id', meeting.id)
+    setSavingMinutes(false)
+  }
+
+  async function approveMinutes() {
+    setApprovingMinutes(true)
+    await supabase.from('meetings').update({
+      final_minutes: draftMinutes,
+      status: 'approved',
+    }).eq('id', meeting.id)
+    setFinalMinutes(draftMinutes)
+    setApprovingMinutes(false)
+    router.refresh()
+  }
+
+  async function handleAddAction(e: React.FormEvent) {
+    e.preventDefault()
+    setSavingAction(true)
+    const { data: newItem } = await supabase.from('action_items').insert({
+      meeting_id: meeting.id,
+      title: newAction.title,
+      description: newAction.description || null,
+      owner_user_id: newAction.owner_user_id || null,
+      due_date: newAction.due_date || null,
+      status: 'Not Started',
+    }).select('*, owner:profiles!owner_user_id(full_name)').single()
+
+    if (newItem) {
+      setActionItems((prev) => [...prev, newItem])
+      setNewAction({ title: '', description: '', owner_user_id: '', due_date: '' })
+      setShowAddAction(false)
+    }
+    setSavingAction(false)
+  }
+
+  async function updateActionStatus(itemId: string, status: ActionItemStatus) {
+    await supabase.from('action_items').update({ status }).eq('id', itemId)
+    setActionItems((prev) => prev.map((a) => a.id === itemId ? { ...a, status } : a))
+  }
+
+  const tabs = [
+    { key: 'minutes', label: 'Minutes' },
+    { key: 'transcript', label: 'Transcript / Notes' },
+    { key: 'actions', label: `Action Items (${actionItems.length})` },
+  ] as const
+
+  return (
+    <div className="space-y-4">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+              activeTab === tab.key
+                ? 'border-slate-800 text-slate-900'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Transcript Tab */}
+      {activeTab === 'transcript' && (
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            {isAdmin ? (
+              <>
+                <Textarea
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  placeholder="Paste transcript or meeting notes here..."
+                  rows={16}
+                />
+                <div className="flex gap-3">
+                  <Button
+                    onClick={generateMinutes}
+                    disabled={generatingMinutes || !transcript.trim()}
+                    variant="primary"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {generatingMinutes ? 'Generating...' : 'Generate Minutes with AI'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500 italic">
+                {transcript || 'No transcript recorded.'}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Minutes Tab */}
+      {activeTab === 'minutes' && (
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            {meeting.final_minutes ? (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Badge className="bg-green-100 text-green-700">Approved Minutes</Badge>
+                </div>
+                <div className="prose text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+                  {meeting.final_minutes}
+                </div>
+              </div>
+            ) : isAdmin ? (
+              <>
+                <Textarea
+                  value={draftMinutes}
+                  onChange={(e) => setDraftMinutes(e.target.value)}
+                  placeholder="Draft minutes will appear here after AI generation, or type directly..."
+                  rows={20}
+                />
+                <div className="flex gap-3 flex-wrap">
+                  <Button onClick={saveMinutes} disabled={savingMinutes} variant="secondary">
+                    <Save className="h-4 w-4" />
+                    {savingMinutes ? 'Saving...' : 'Save Draft'}
+                  </Button>
+                  {draftMinutes.trim() && (
+                    <Button onClick={approveMinutes} disabled={approvingMinutes}>
+                      {approvingMinutes ? 'Approving...' : 'Approve & Finalise Minutes'}
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="prose text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+                {meeting.draft_minutes || <p className="text-slate-400 italic">No minutes available yet.</p>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Action Items Tab */}
+      {activeTab === 'actions' && (
+        <div className="space-y-4">
+          {isAdmin && (
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowAddAction(!showAddAction)}>
+                <Plus className="h-4 w-4" />
+                Add Action
+              </Button>
+            </div>
+          )}
+
+          {showAddAction && (
+            <Card className="p-4">
+              <form onSubmit={handleAddAction} className="space-y-3">
+                <div>
+                  <Label>Title *</Label>
+                  <Input value={newAction.title} onChange={(e) => setNewAction({ ...newAction, title: e.target.value })} required placeholder="What needs to be done?" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Assign To</Label>
+                    <Select value={newAction.owner_user_id} onChange={(e) => setNewAction({ ...newAction, owner_user_id: e.target.value })}>
+                      <option value="">Unassigned</option>
+                      {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Due Date</Label>
+                    <Input type="date" value={newAction.due_date} onChange={(e) => setNewAction({ ...newAction, due_date: e.target.value })} />
+                  </div>
+                </div>
+                <Textarea value={newAction.description} onChange={(e) => setNewAction({ ...newAction, description: e.target.value })} placeholder="Description (optional)" rows={2} />
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm" disabled={savingAction}>{savingAction ? 'Adding...' : 'Add'}</Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setShowAddAction(false)}>Cancel</Button>
+                </div>
+              </form>
+            </Card>
+          )}
+
+          {actionItems.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No action items yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {actionItems.map((item) => (
+                <Card key={item.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="font-medium text-slate-900 text-sm">{item.title}</p>
+                      {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+                      <div className="flex flex-wrap gap-3 mt-2 text-xs text-slate-500">
+                        {(item.owner as { full_name: string } | null)?.full_name && (
+                          <span>Owner: {(item.owner as { full_name: string }).full_name}</span>
+                        )}
+                        {item.due_date && <span>Due: {formatDate(item.due_date)}</span>}
+                      </div>
+                    </div>
+                    <Select
+                      value={item.status}
+                      onChange={(e) => updateActionStatus(item.id, e.target.value as ActionItemStatus)}
+                      className="w-36 text-xs"
+                    >
+                      {(['Not Started', 'In Progress', 'Done', 'Blocked'] as ActionItemStatus[]).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="mt-2">
+                    <Badge className={cn('text-xs', ACTION_STATUS_COLORS[item.status])}>{item.status}</Badge>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

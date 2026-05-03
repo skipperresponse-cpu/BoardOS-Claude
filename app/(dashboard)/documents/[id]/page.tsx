@@ -1,0 +1,127 @@
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { notFound, redirect } from 'next/navigation'
+import { Header } from '@/components/layout/header'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { formatDate } from '@/lib/utils'
+import { DocumentActions } from './document-actions'
+import { FileText, Calendar, User, Tag } from 'lucide-react'
+
+interface Props {
+  params: Promise<{ id: string }>
+}
+
+export default async function DocumentDetailPage({ params }: Props) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, role')
+    .eq('user_id', user.id)
+    .single()
+
+  const { data: doc } = await supabase
+    .from('documents')
+    .select('*, uploader:profiles!uploaded_by(full_name, email)')
+    .eq('id', id)
+    .single()
+
+  if (!doc) notFound()
+
+  const serviceSupabase = await createServiceClient()
+  const { data: urlData } = await serviceSupabase.storage
+    .from('governance-docs')
+    .createSignedUrl(doc.file_path, 3600)
+
+  return (
+    <div>
+      <Header
+        title={doc.title}
+        description={doc.description ?? undefined}
+        action={
+          profile?.role === 'admin' ? (
+            <DocumentActions documentId={doc.id} currentStatus={doc.status} />
+          ) : undefined
+        }
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
+                    <Tag className="h-3.5 w-3.5" /> Category
+                  </dt>
+                  <dd><Badge className="bg-slate-100 text-slate-700">{doc.category}</Badge></dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
+                    <Calendar className="h-3.5 w-3.5" /> Document Date
+                  </dt>
+                  <dd className="text-sm text-slate-800">{formatDate(doc.document_date)}</dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
+                    <User className="h-3.5 w-3.5" /> Uploaded By
+                  </dt>
+                  <dd className="text-sm text-slate-800">
+                    {(doc.uploader as { full_name: string } | null)?.full_name ?? '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
+                    <Calendar className="h-3.5 w-3.5" /> Uploaded On
+                  </dt>
+                  <dd className="text-sm text-slate-800">{formatDate(doc.created_at)}</dd>
+                </div>
+              </dl>
+
+              {urlData?.signedUrl && (
+                <div className="mt-6">
+                  <a
+                    href={urlData.signedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 transition-colors"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Open Document
+                  </a>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Extracted Text Preview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {doc.extracted_text ? (
+                <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed line-clamp-[20]">
+                  {doc.extracted_text}
+                </p>
+              ) : (
+                <p className="text-sm text-slate-400 italic">
+                  Text extraction pending. The document is being processed.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
