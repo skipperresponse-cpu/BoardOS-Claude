@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
+  // Auth check with cookie-based client
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -23,9 +25,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
   }
 
-  const serviceSupabase = await createServiceClient()
+  // Use raw supabase-js client (not SSR wrapper) for auth.admin operations
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adminSupa: any = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
 
-  const { data: authData, error: authError } = await serviceSupabase.auth.admin.createUser({
+  const { data: authData, error: authError } = await adminSupa.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -36,20 +44,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: authError.message }, { status: 400 })
   }
 
-  // Poll briefly for the trigger to create the profile
+  const newUserId: string = authData.user.id
+
+  // Poll for the trigger to create the profile (up to 3s)
   let profileId: string | null = null
   for (let i = 0; i < 6; i++) {
     await new Promise(r => setTimeout(r, 500))
-    const { data } = await serviceSupabase
-      .from('profiles').select('id').eq('user_id', authData.user.id).single()
-    if (data) { profileId = (data as { id: string }).id; break }
+    const { data } = await adminSupa
+      .from('profiles').select('id').eq('user_id', newUserId).single()
+    if (data?.id) { profileId = data.id; break }
   }
 
+  // If trigger didn't fire, insert profile manually
+  if (!profileId) {
+    const { data: inserted } = await adminSupa.from('profiles').insert({
+      user_id: newUserId,
+      full_name,
+      email,
+      role,
+    }).select('id').single()
+    profileId = inserted?.id ?? null
+  }
+
+  // Ensure role is correctly set (trigger may default to board_member)
   if (profileId) {
-    await serviceSupabase.from('profiles').update({ role }).eq('id', profileId)
+    await adminSupa.from('profiles').update({ role, full_name, email }).eq('id', profileId)
   }
 
   await logAudit(adminProfile.id, 'user_created', 'profile', profileId, { email, role })
 
-  return NextResponse.json({ success: true, userId: authData.user.id })
+  return NextResponse.json({ success: true, userId: newUserId })
 }
