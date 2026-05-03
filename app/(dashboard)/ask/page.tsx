@@ -17,18 +17,11 @@ export default async function AskPage() {
   if (profile?.role === 'viewer') {
     return (
       <div>
-        <Header title="Ask AI" />
+        <Header title="Governance Assistant" />
         <p className="text-slate-500">You do not have permission to use the AI assistant.</p>
       </div>
     )
   }
-
-  const { data: recentQueries } = await supabase
-    .from('ai_queries')
-    .select('*')
-    .eq('user_id', profile?.id)
-    .order('created_at', { ascending: false })
-    .limit(10)
 
   return (
     <div>
@@ -36,7 +29,7 @@ export default async function AskPage() {
         title="Governance Assistant"
         description="Ask about board governance, policies, and best practices. Grounded in your documents, informed by general governance knowledge."
       />
-      <AskAIClient recentQueries={recentQueries ?? []} />
+      <AskAIClient />
     </div>
   )
 }

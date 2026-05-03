@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react'
 import {
-  Send, BookOpen, ChevronDown, ChevronUp, MessageSquare,
+  Send, BookOpen, ChevronDown, ChevronUp,
   FileText, AlertTriangle, Lightbulb, Sparkles, Loader2,
+  ShieldAlert, ScrollText, ClipboardList, Users,
 } from 'lucide-react'
 import { cn, CONFIDENCE_COLORS } from '@/lib/utils'
-import type { AIQuery, AISource } from '@/types'
+import type { AISource } from '@/types'
 
-// ─── Types ─────────────────────────────────────────────────���──────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface StructuredAnswer {
   direct_answer: string
@@ -28,19 +29,24 @@ interface Message {
   error?: string
 }
 
-interface Props {
-  recentQueries: AIQuery[]
-}
-
-// ─── Confidence metadata ─────────────────────────────────���───────────────────��
+// ─── Confidence metadata ──────────────────────────────────────────────────────
 
 const CONF_META = {
-  high:   { label: 'High confidence',  bg: 'bg-emerald-100 text-emerald-700', note: 'Directly from your governance documents' },
-  medium: { label: 'Medium confidence', bg: 'bg-amber-100 text-amber-700',   note: 'Combines your documents with governance best practice' },
-  low:    { label: 'Advisory',          bg: 'bg-slate-100 text-slate-600',    note: 'General governance best practice — no specific document coverage' },
+  high:   { label: 'High confidence',   bg: 'bg-emerald-100 text-emerald-700', note: 'Directly from your governance documents' },
+  medium: { label: 'Medium confidence', bg: 'bg-amber-100 text-amber-700',     note: 'Combines your documents with governance best practice' },
+  low:    { label: 'Advisory',          bg: 'bg-slate-100 text-slate-600',      note: 'General governance best practice — no specific document coverage' },
 }
 
-// ─── Simple text renderer ─────────────────────────────────────────────────────
+// ─── Suggested prompts ────────────────────────────────────────────────────────
+
+const SUGGESTED = [
+  { icon: ShieldAlert,   label: 'Governance risks',     q: 'What are our key governance risks?' },
+  { icon: ScrollText,    label: 'Recent decisions',     q: 'Summarise our recent board decisions and any outstanding items.' },
+  { icon: ClipboardList, label: 'Missing policies',     q: 'What policies are missing from our governance framework?' },
+  { icon: Users,         label: 'Board composition',    q: 'What does our constitution say about board composition and appointments?' },
+]
+
+// ─── Text renderer ────────────────────────────────────────────────────────────
 
 function TextBlock({ text, className }: { text: string; className?: string }) {
   return (
@@ -51,7 +57,7 @@ function TextBlock({ text, className }: { text: string; className?: string }) {
         if (t.startsWith('- ') || t.startsWith('• ')) {
           return (
             <div key={i} className="flex items-start gap-2 pl-1">
-              <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-current opacity-50 flex-shrink-0" />
+              <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-current opacity-40 flex-shrink-0" />
               <span>{t.slice(2)}</span>
             </div>
           )
@@ -62,18 +68,17 @@ function TextBlock({ text, className }: { text: string; className?: string }) {
   )
 }
 
-// ─── Component ─────────────────────────────��─────────────────────────────��────
+// ─── Component ────────────────────────────────────────────────────────────────
 
-export function AskAIClient({ recentQueries }: Props) {
+export function AskAIClient() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sourcesOpen, setSourcesOpen] = useState<Record<string, boolean>>({})
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   function buildHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -137,58 +142,97 @@ export function AskAIClient({ recentQueries }: Props) {
     }
   }
 
-  const EXAMPLES = [
-    'What does our constitution say about quorum?',
-    'What are the procurement thresholds for large contracts?',
-    'How do we appoint new board members?',
-    'What are our obligations around conflicts of interest?',
-  ]
-
   const isLoading = messages.some(m => m.loading)
+  const hasMessages = messages.length > 0
 
   return (
-    <div className="flex gap-5" style={{ height: 'calc(100vh - 11rem)' }}>
+    <div className="flex flex-col gap-4">
 
-      {/* ── Chat panel ────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 bg-white rounded-xl border border-slate-200 overflow-hidden">
-
-        {/* Message thread */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-5">
-
-          {/* Empty state */}
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center gap-5 pb-8">
-              <div className="h-14 w-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                <Sparkles className="h-7 w-7 text-indigo-500" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">Governance Assistant</h3>
-                <p className="text-sm text-slate-500 mt-1 max-w-sm">
-                  Ask about your governance documents, board procedures, or best practices. I'll draw on your uploaded documents and general nonprofit governance knowledge.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 justify-center max-w-lg">
-                {EXAMPLES.map(q => (
+      {/* ── Input panel (always at top) ────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Sparkles className="h-4 w-4 text-indigo-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about governance, policies, board procedures, or best practices…"
+              rows={3}
+              disabled={isLoading}
+              className="w-full resize-none bg-slate-50 rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60 transition-colors"
+            />
+            <div className="flex items-center justify-between mt-2.5 gap-3 flex-wrap">
+              {/* Suggested prompt chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {SUGGESTED.map(s => (
                   <button
-                    key={q}
-                    onClick={() => handleSend(q)}
-                    className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 transition-colors"
+                    key={s.q}
+                    type="button"
+                    onClick={() => handleSend(s.q)}
+                    disabled={isLoading}
+                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors"
                   >
-                    {q}
+                    <s.icon className="h-3 w-3" />
+                    {s.label}
                   </button>
                 ))}
               </div>
+              {/* Send button + hint */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {hasMessages && (
+                  <span className="text-[11px] text-slate-400 hidden sm:block">context maintained</span>
+                )}
+                <button
+                  onClick={() => handleSend()}
+                  disabled={isLoading || !input.trim()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {isLoading
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Thinking…</>
+                    : <><Send className="h-4 w-4" /> Ask</>
+                  }
+                </button>
+              </div>
             </div>
-          )}
+          </div>
+        </div>
+      </div>
 
-          {/* Messages */}
+      {/* ── Empty state ────────────────────────────────────────────────── */}
+      {!hasMessages && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {SUGGESTED.map(s => (
+            <button
+              key={s.q}
+              onClick={() => handleSend(s.q)}
+              className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-indigo-200 hover:bg-indigo-50/40 transition-colors group"
+            >
+              <div className="h-8 w-8 rounded-lg bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center flex-shrink-0 transition-colors">
+                <s.icon className="h-4 w-4 text-slate-500 group-hover:text-indigo-600 transition-colors" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-700 group-hover:text-indigo-700 transition-colors">{s.label}</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{s.q}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Conversation thread ─────────────────────────────────────────── */}
+      {hasMessages && (
+        <div className="space-y-5">
           {messages.map(msg => (
             <div key={msg.id}>
 
               {/* User bubble */}
               {msg.type === 'user' && (
                 <div className="flex justify-end">
-                  <div className="max-w-[72%] bg-indigo-600 text-white rounded-2xl rounded-tr-md px-4 py-3">
+                  <div className="max-w-[80%] sm:max-w-[70%] bg-indigo-600 text-white rounded-2xl rounded-tr-md px-4 py-3">
                     <p className="text-sm leading-relaxed">{msg.content}</p>
                   </div>
                 </div>
@@ -197,10 +241,10 @@ export function AskAIClient({ recentQueries }: Props) {
               {/* Assistant response */}
               {msg.type === 'assistant' && (
                 <div className="flex justify-start">
-                  <div className="max-w-[90%] space-y-2.5">
+                  <div className="w-full max-w-full space-y-2.5">
 
                     {msg.loading && (
-                      <div className="flex items-center gap-2 text-slate-400 py-2">
+                      <div className="flex items-center gap-2 text-slate-400 py-2 px-1">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span className="text-sm">Thinking…</span>
                       </div>
@@ -217,8 +261,8 @@ export function AskAIClient({ recentQueries }: Props) {
                       const conf = CONF_META[r.confidence] ?? CONF_META.low
                       return (
                         <>
-                          {/* Confidence */}
-                          <div className="flex items-center gap-2">
+                          {/* Confidence pill */}
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', conf.bg)}>
                               {conf.label}
                             </span>
@@ -226,11 +270,11 @@ export function AskAIClient({ recentQueries }: Props) {
                           </div>
 
                           {/* Direct answer */}
-                          <div className="bg-slate-50 rounded-xl px-4 py-3.5 text-slate-800">
+                          <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 text-slate-800">
                             <TextBlock text={r.direct_answer} />
                           </div>
 
-                          {/* What documents say */}
+                          {/* Document evidence */}
                           {r.document_evidence && (
                             <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3.5">
                               <div className="flex items-center gap-1.5 mb-2">
@@ -271,7 +315,7 @@ export function AskAIClient({ recentQueries }: Props) {
                                 className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors"
                               >
                                 <BookOpen className="h-3.5 w-3.5" />
-                                {sourcesOpen[msg.id] ? 'Hide' : 'Show'} document sources ({r.sources.length})
+                                {sourcesOpen[msg.id] ? 'Hide' : 'View'} document sources ({r.sources.length})
                                 {sourcesOpen[msg.id] ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                               </button>
                               {sourcesOpen[msg.id] && (
@@ -294,70 +338,7 @@ export function AskAIClient({ recentQueries }: Props) {
               )}
             </div>
           ))}
-        </div>
-
-        {/* Input bar */}
-        <div className="border-t border-slate-100 px-4 py-3">
-          <div className="flex items-end gap-3">
-            <div className="flex-1 relative">
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask about governance, policies, board procedures…"
-                rows={2}
-                disabled={isLoading}
-                className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60 transition-colors pr-12"
-              />
-              <span className="absolute bottom-2.5 right-3 text-[10px] text-slate-300 select-none">⌘↵</span>
-            </div>
-            <button
-              onClick={() => handleSend()}
-              disabled={isLoading || !input.trim()}
-              className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:opacity-50 transition-colors flex-shrink-0 mb-0.5"
-            >
-              {isLoading
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <Send className="h-4 w-4" />
-              }
-            </button>
-          </div>
-          {messages.length > 0 && (
-            <p className="text-[11px] text-slate-400 mt-1.5 text-center">
-              Conversation context is maintained within this session
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* ── Past questions sidebar ────────────────────────────────────────── */}
-      {recentQueries.length > 0 && (
-        <div className="w-60 flex-shrink-0 hidden lg:block">
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden h-full flex flex-col">
-            <div className="px-4 py-3 border-b border-slate-100 flex-shrink-0">
-              <h3 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-                <MessageSquare className="h-3.5 w-3.5" />
-                Past questions
-              </h3>
-            </div>
-            <ul className="divide-y divide-slate-100 overflow-y-auto flex-1">
-              {recentQueries.slice(0, 15).map(q => (
-                <li
-                  key={q.id}
-                  onClick={() => setInput(q.question)}
-                  className="px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
-                >
-                  <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed">{q.question}</p>
-                  <span className={cn(
-                    'mt-1.5 inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
-                    CONFIDENCE_COLORS[q.confidence as keyof typeof CONFIDENCE_COLORS] ?? 'bg-slate-100 text-slate-500'
-                  )}>
-                    {q.confidence}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <div ref={messagesEndRef} />
         </div>
       )}
     </div>
