@@ -40,11 +40,10 @@ export async function POST(request: NextRequest) {
     let extractedText = ''
 
     if (fileName.endsWith('.pdf')) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pdfModule = await import('pdf-parse') as any
-      const pdfParse = pdfModule.default ?? pdfModule
-      const result = await pdfParse(buffer)
-      extractedText = result.text
+      const { getDocumentProxy, extractText } = await import('unpdf')
+      const pdf = await getDocumentProxy(new Uint8Array(buffer))
+      const { text } = await extractText(pdf, { mergePages: true })
+      extractedText = text
     } else if (fileName.endsWith('.docx')) {
       const mammoth = await import('mammoth')
       const result = await mammoth.extractRawText({ buffer })

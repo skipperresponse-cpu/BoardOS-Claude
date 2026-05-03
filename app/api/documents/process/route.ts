@@ -26,7 +26,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Download file from storage
     const { data: fileData, error: downloadError } = await serviceSupabase
       .storage
       .from('governance-docs')
@@ -41,11 +40,10 @@ export async function POST(request: NextRequest) {
     let extractedText = ''
 
     if (fileName.endsWith('.pdf')) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pdfModule = await import('pdf-parse') as any
-      const pdfParse = pdfModule.default ?? pdfModule
-      const result = await pdfParse(buffer)
-      extractedText = result.text
+      const { getDocumentProxy, extractText } = await import('unpdf')
+      const pdf = await getDocumentProxy(new Uint8Array(buffer))
+      const { text } = await extractText(pdf, { mergePages: true })
+      extractedText = text
     } else if (fileName.endsWith('.docx')) {
       const mammoth = await import('mammoth')
       const result = await mammoth.extractRawText({ buffer })
@@ -54,29 +52,30 @@ export async function POST(request: NextRequest) {
       extractedText = buffer.toString('utf-8')
     }
 
-    // Update document with extracted text
     await serviceSupabase
       .from('documents')
       .update({ extracted_text: extractedText })
       .eq('id', documentId)
 
-    // Delete existing chunks for this document
     await serviceSupabase
       .from('document_chunks')
       .delete()
       .eq('document_id', documentId)
 
-    // Chunk and embed
     const chunks = chunkText(extractedText)
 
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i])
-      await serviceSupabase.from('document_chunks').insert({
+      const { error: chunkError } = await serviceSupabase.from('document_chunks').insert({
         document_id: documentId,
         chunk_text: chunks[i],
         chunk_index: i,
         embedding: JSON.stringify(embedding),
       })
+      if (chunkError) {
+        console.error(`Chunk ${i} insert failed:`, chunkError.message)
+        throw new Error(`Failed to store chunk ${i}: ${chunkError.message}`)
+      }
     }
 
     const { data: profile } = await supabase
