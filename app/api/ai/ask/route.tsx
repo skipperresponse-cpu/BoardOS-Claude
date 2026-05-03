@@ -30,26 +30,18 @@ export async function POST(request: NextRequest) {
   // Get embedding for the question
   const questionEmbedding = await generateEmbedding(question)
 
-  // Fetch all chunks (with embeddings) from active documents
-  const { data: chunks } = await serviceSupabase
-    .from('document_chunks')
-    .select(`
-      id,
-      document_id,
-      chunk_text,
-      chunk_index,
-      embedding,
-      documents!inner(title, status)
-    `)
-    .eq('documents.status', 'active')
+  // Get active document IDs and titles
+  const { data: activeDocs } = await serviceSupabase
+    .from('documents')
+    .select('id, title')
+    .eq('status', 'active')
 
-  if (!chunks || chunks.length === 0) {
+  if (!activeDocs || activeDocs.length === 0) {
     const result = {
-      answer: 'The uploaded documents do not contain enough information to answer this question.',
+      answer: 'No documents have been uploaded yet. Please upload governance documents before asking questions.',
       confidence: 'insufficient',
       sources: [],
     }
-
     await serviceSupabase.from('ai_queries').insert({
       user_id: profile.id,
       question,
@@ -57,7 +49,32 @@ export async function POST(request: NextRequest) {
       confidence: result.confidence,
       sources_used: result.sources,
     })
+    return NextResponse.json(result)
+  }
 
+  const docTitleMap: Record<string, string> = {}
+  for (const d of activeDocs) docTitleMap[d.id] = d.title
+  const activeDocIds = Object.keys(docTitleMap)
+
+  // Fetch all chunks for active documents
+  const { data: chunks } = await serviceSupabase
+    .from('document_chunks')
+    .select('id, document_id, chunk_text, chunk_index, embedding')
+    .in('document_id', activeDocIds)
+
+  if (!chunks || chunks.length === 0) {
+    const result = {
+      answer: 'The uploaded documents have not been processed yet. Please open each document and click "Re-process" to extract and index its content.',
+      confidence: 'insufficient',
+      sources: [],
+    }
+    await serviceSupabase.from('ai_queries').insert({
+      user_id: profile.id,
+      question,
+      answer: result.answer,
+      confidence: result.confidence,
+      sources_used: result.sources,
+    })
     return NextResponse.json(result)
   }
 
@@ -68,10 +85,9 @@ export async function POST(request: NextRequest) {
       const emb = typeof c.embedding === 'string'
         ? JSON.parse(c.embedding)
         : c.embedding as number[]
-      const doc = c.documents as unknown as { title: string; status: string }
       return {
         document_id: c.document_id,
-        document_title: doc.title,
+        document_title: docTitleMap[c.document_id] ?? 'Unknown',
         chunk_text: c.chunk_text,
         similarity: cosineSimilarity(questionEmbedding, emb),
       }

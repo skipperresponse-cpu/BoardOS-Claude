@@ -67,12 +67,16 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i])
-      await serviceSupabase.from('document_chunks').insert({
+      const { error: chunkError } = await serviceSupabase.from('document_chunks').insert({
         document_id: documentId,
         chunk_text: chunks[i],
         chunk_index: i,
         embedding: JSON.stringify(embedding),
       })
+      if (chunkError) {
+        console.error(`Chunk ${i} insert failed:`, chunkError.message)
+        throw new Error(`Failed to store chunk ${i}: ${chunkError.message}`)
+      }
     }
 
     const { data: profile } = await supabase

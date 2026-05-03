@@ -34,9 +34,10 @@ export default async function DocumentDetailPage({ params }: Props) {
   if (!doc) notFound()
 
   const serviceSupabase = await createServiceClient()
-  const { data: urlData } = await serviceSupabase.storage
-    .from('governance-docs')
-    .createSignedUrl(doc.file_path, 3600)
+  const [{ data: urlData }, { count: chunkCount }] = await Promise.all([
+    serviceSupabase.storage.from('governance-docs').createSignedUrl(doc.file_path, 3600),
+    serviceSupabase.from('document_chunks').select('id', { count: 'exact', head: true }).eq('document_id', id),
+  ])
 
   return (
     <div>
@@ -109,13 +110,24 @@ export default async function DocumentDetailPage({ params }: Props) {
               <CardTitle>Extracted Text Preview</CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="mb-3 flex items-center gap-2">
+                {chunkCount && chunkCount > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                    ✓ Indexed — {chunkCount} chunk{chunkCount !== 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                    ⚠ Not indexed — click &quot;Re-process for AI&quot;
+                  </span>
+                )}
+              </div>
               {doc.extracted_text ? (
                 <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed line-clamp-[20]">
                   {doc.extracted_text}
                 </p>
               ) : (
                 <p className="text-sm text-slate-400 italic">
-                  Text extraction pending. The document is being processed.
+                  No text extracted yet. Click &quot;Re-process for AI&quot; to index this document.
                 </p>
               )}
             </CardContent>
