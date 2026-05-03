@@ -176,10 +176,10 @@ export default async function DashboardPage() {
     <div className="space-y-6">
 
       {/* Welcome banner */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-800 to-slate-700 p-6 text-white flex items-center justify-between">
+      <div className="rounded-2xl bg-gradient-to-r from-slate-800 to-slate-700 p-5 sm:p-6 text-white flex items-center justify-between">
         <div>
-          <p className="text-slate-400 text-sm font-medium">{today}</p>
-          <h2 className="text-2xl font-bold mt-1">Good day, {firstName} 👋</h2>
+          <p className="text-slate-400 text-xs sm:text-sm font-medium">{today}</p>
+          <h2 className="text-xl sm:text-2xl font-bold mt-1">Good day, {firstName} 👋</h2>
           <p className="text-slate-300 text-sm mt-1">
             {pendingVotes.length > 0
               ? <><span className="text-white font-semibold">{pendingVotes.length} pending vote{pendingVotes.length !== 1 ? 's' : ''}</span> · </>

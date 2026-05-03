@@ -221,55 +221,75 @@ export function DocumentsClient({ documents: initialDocs, userRole }: Props) {
         </Card>
       )}
 
-      {/* Documents Table */}
+      {/* Documents list */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">No documents found.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-6 py-3 font-medium text-slate-500">Title</th>
-                <th className="text-left px-6 py-3 font-medium text-slate-500 hidden sm:table-cell">Category</th>
-                <th className="text-left px-6 py-3 font-medium text-slate-500 hidden md:table-cell">Date</th>
-                <th className="text-left px-6 py-3 font-medium text-slate-500 hidden lg:table-cell">Uploaded</th>
-                <th className="px-6 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((doc) => (
-                <tr key={doc.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-slate-900">{doc.title}</div>
-                    {doc.description && (
-                      <div className="text-xs text-slate-400 mt-0.5 line-clamp-1">{doc.description}</div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 hidden sm:table-cell">
-                    <Badge className="bg-slate-100 text-slate-600">{doc.category}</Badge>
-                  </td>
-                  <td className="px-6 py-4 text-slate-500 hidden md:table-cell">
-                    {formatDate(doc.document_date)}
-                  </td>
-                  <td className="px-6 py-4 text-slate-500 hidden lg:table-cell">
-                    {formatDate(doc.created_at)}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Link
-                      href={`/documents/${doc.id}`}
-                      className="text-slate-600 hover:text-slate-900 font-medium text-xs"
-                    >
-                      View
-                    </Link>
-                  </td>
+        <>
+          {/* Mobile card list */}
+          <div className="sm:hidden space-y-3">
+            {filtered.map((doc) => (
+              <Link key={doc.id} href={`/documents/${doc.id}`}
+                className="flex items-start justify-between p-4 bg-white rounded-lg border border-slate-200 hover:border-slate-300 transition-colors gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-slate-900 text-sm">{doc.title}</p>
+                  {doc.description && (
+                    <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{doc.description}</p>
+                  )}
+                  <p className="text-xs text-slate-500 mt-1">{formatDate(doc.document_date)}</p>
+                </div>
+                <Badge className="bg-slate-100 text-slate-600 flex-shrink-0">{doc.category}</Badge>
+              </Link>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-6 py-3 font-medium text-slate-500">Title</th>
+                  <th className="text-left px-6 py-3 font-medium text-slate-500">Category</th>
+                  <th className="text-left px-6 py-3 font-medium text-slate-500 hidden md:table-cell">Date</th>
+                  <th className="text-left px-6 py-3 font-medium text-slate-500 hidden lg:table-cell">Uploaded</th>
+                  <th className="px-6 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((doc) => (
+                  <tr key={doc.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-slate-900">{doc.title}</div>
+                      {doc.description && (
+                        <div className="text-xs text-slate-400 mt-0.5 line-clamp-1">{doc.description}</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge className="bg-slate-100 text-slate-600">{doc.category}</Badge>
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 hidden md:table-cell">
+                      {formatDate(doc.document_date)}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 hidden lg:table-cell">
+                      {formatDate(doc.created_at)}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link
+                        href={`/documents/${doc.id}`}
+                        className="text-slate-600 hover:text-slate-900 font-medium text-xs"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )

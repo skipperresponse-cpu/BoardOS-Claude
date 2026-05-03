@@ -143,36 +143,55 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
           <p className="text-sm">No meetings found.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-6 py-3 font-medium text-slate-500">Meeting</th>
-                <th className="text-left px-6 py-3 font-medium text-slate-500 hidden sm:table-cell">Date</th>
-                <th className="text-left px-6 py-3 font-medium text-slate-500 hidden md:table-cell">Status</th>
-                <th className="px-6 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 font-medium text-slate-900">{m.title}</td>
-                  <td className="px-6 py-4 text-slate-500 hidden sm:table-cell">{formatDate(m.meeting_date)}</td>
-                  <td className="px-6 py-4 hidden md:table-cell">
-                    <Badge className={STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
-                      {m.status.replace('_', ' ')}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Link href={`/meetings/${m.id}`} className="text-xs font-medium text-slate-600 hover:text-slate-900">
-                      View
-                    </Link>
-                  </td>
+        <>
+          {/* Mobile card list */}
+          <div className="sm:hidden space-y-3">
+            {filtered.map((m) => (
+              <Link key={m.id} href={`/meetings/${m.id}`}
+                className="flex items-center justify-between p-4 bg-white rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
+                <div className="flex-1 min-w-0 pr-3">
+                  <p className="font-medium text-slate-900 text-sm truncate">{m.title}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{formatDate(m.meeting_date)}</p>
+                </div>
+                <Badge className={STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
+                  {m.status.replace('_', ' ')}
+                </Badge>
+              </Link>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-6 py-3 font-medium text-slate-500">Meeting</th>
+                  <th className="text-left px-6 py-3 font-medium text-slate-500">Date</th>
+                  <th className="text-left px-6 py-3 font-medium text-slate-500 hidden md:table-cell">Status</th>
+                  <th className="px-6 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 font-medium text-slate-900">{m.title}</td>
+                    <td className="px-6 py-4 text-slate-500">{formatDate(m.meeting_date)}</td>
+                    <td className="px-6 py-4 hidden md:table-cell">
+                      <Badge className={STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
+                        {m.status.replace('_', ' ')}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link href={`/meetings/${m.id}`} className="text-xs font-medium text-slate-600 hover:text-slate-900">
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )

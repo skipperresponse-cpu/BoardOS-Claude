@@ -162,7 +162,7 @@ export function ActionItemsClient({ actionItems: initial, profiles, userRole, cu
                   <Select
                     value={item.status}
                     onChange={(e) => updateStatus(item.id, e.target.value as ActionItemStatus)}
-                    className="w-36 text-xs flex-shrink-0"
+                    className="w-28 sm:w-36 text-xs flex-shrink-0"
                   >
                     {(['Not Started', 'In Progress', 'Done', 'Blocked'] as ActionItemStatus[]).map((s) => (
                       <option key={s} value={s}>{s}</option>
