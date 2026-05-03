@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import { AdminUsersClient } from './admin-users-client'
 import { AdminAuditLog } from './admin-audit-log'
+import { AdminSeedClient } from './admin-seed-client'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -38,6 +39,11 @@ export default async function AdminPage() {
       <Header title="Admin" description="User management and system audit logs." />
 
       <div className="space-y-8">
+        <section>
+          <h3 className="text-base font-semibold text-slate-800 mb-4">Demo Data</h3>
+          <AdminSeedClient />
+        </section>
+
         <section>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Users</h3>
           <AdminUsersClient profiles={profiles ?? []} />
