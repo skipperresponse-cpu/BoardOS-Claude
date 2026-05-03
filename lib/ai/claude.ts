@@ -5,8 +5,12 @@ import type { AISource, ActionItem } from '@/types'
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export interface GovernanceAnswer {
-  answer: string
-  confidence: 'high' | 'medium' | 'low' | 'insufficient'
+  answer: string                      // stored in DB (= direct_answer)
+  direct_answer: string
+  document_evidence: string | null
+  gaps: string | null
+  practical_guidance: string | null
+  confidence: 'high' | 'medium' | 'low'
   sources: AISource[]
 }
 
@@ -37,64 +41,30 @@ export interface Resolution {
   outcome: string
 }
 
+const GOVERNANCE_SYSTEM_PROMPT = `You are a Governance Assistant for a nonprofit charity board. You help board members navigate governance matters with clarity and practical wisdom.
+
+You have access to the organisation's internal governance documents. Your approach:
+1. Prioritise information from the provided document excerpts
+2. When documents are silent, draw on general nonprofit governance best practices
+3. Clearly distinguish: (a) what your documents say, (b) general best practice, (c) your suggestions
+4. Use a natural, advisory, collegial tone — like a knowledgeable governance advisor, not a legal document
+5. Always surface governance gaps and suggest practical next steps
+6. Never advise on how board members should vote on specific matters
+
+Respond with ONLY a valid JSON object — no preamble, no markdown fences, no extra text:
+{
+  "direct_answer": "A clear, conversational 2-4 sentence answer. If documents are silent, give a best-practice answer and say so.",
+  "document_evidence": "What your specific governance documents say about this topic. Use inline citations like [Board Charter §3] or [Financial SOP §2.1]. Use bullet points (- item) for multiple points. Null if no relevant document coverage.",
+  "gaps": "Any governance gaps or missing policies this question reveals — things the board may want to address. Null if no gaps identified.",
+  "practical_guidance": "Practical next steps or recommendations. What the board should consider doing. Use bullet points for multiple suggestions.",
+  "confidence": "high if internal documents directly answer this | medium if documents partially address it or you supplement with best practice | low if answer is entirely from general governance knowledge"
+}`
+
 export async function askGovernanceQuestion(
   question: string,
-  chunks: Array<{ document_id: string; document_title: string; chunk_text: string; similarity?: number }>
+  chunks: Array<{ document_id: string; document_title: string; chunk_text: string; similarity?: number }>,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = []
 ): Promise<GovernanceAnswer> {
-  if (chunks.length === 0) {
-    return {
-      answer: 'The uploaded documents do not contain enough information to answer this question.',
-      confidence: 'insufficient',
-      sources: [],
-    }
-  }
-
-  const context = chunks
-    .map((c, i) => `[Source ${i + 1}: ${c.document_title}]\n${c.chunk_text}`)
-    .join('\n\n---\n\n')
-
-  const message = await client.messages.create({
-    model: AI_CONFIG.model,
-    max_tokens: AI_CONFIG.maxTokens,
-    messages: [
-      {
-        role: 'user',
-        content: `You are a governance assistant for a charity board. Your role is to answer questions strictly based on the provided document excerpts. You must not use any general knowledge or make assumptions beyond what the documents state.
-
-RETRIEVED DOCUMENT EXCERPTS:
-${context}
-
-QUESTION: ${question}
-
-INSTRUCTIONS:
-- Answer ONLY using information found in the excerpts above.
-- If the excerpts do not contain sufficient information to answer the question, say exactly: "The uploaded documents do not contain enough information to answer this question."
-- Do not speculate, infer, or use general knowledge.
-- Do not advise board members on how to vote or what decisions to make.
-- Be precise and cite which source document your answer comes from.
-- At the end of your answer, indicate your confidence: HIGH (clear direct answer found), MEDIUM (partial or indirect answer found), or LOW (very limited relevant information).
-
-Format your response as:
-ANSWER: [your answer here]
-CONFIDENCE: [HIGH/MEDIUM/LOW/INSUFFICIENT]`,
-      },
-    ],
-  })
-
-  const responseText = message.content[0].type === 'text' ? message.content[0].text : ''
-
-  const confidenceMatch = responseText.match(/CONFIDENCE:\s*(HIGH|MEDIUM|LOW|INSUFFICIENT)/i)
-  const answerMatch = responseText.match(/ANSWER:\s*([\s\S]*?)(?=CONFIDENCE:|$)/i)
-
-  const confidenceRaw = confidenceMatch?.[1]?.toUpperCase() ?? 'LOW'
-  const confidence = (['HIGH', 'MEDIUM', 'LOW', 'INSUFFICIENT'].includes(confidenceRaw)
-    ? confidenceRaw.toLowerCase()
-    : 'low') as GovernanceAnswer['confidence']
-
-  const answer =
-    answerMatch?.[1]?.trim() ??
-    'The uploaded documents do not contain enough information to answer this question.'
-
   const sources: AISource[] = chunks.map((c) => ({
     document_id: c.document_id,
     document_title: c.document_title,
@@ -102,7 +72,60 @@ CONFIDENCE: [HIGH/MEDIUM/LOW/INSUFFICIENT]`,
     relevance_score: c.similarity,
   }))
 
-  return { answer, confidence, sources }
+  const context = chunks.length > 0
+    ? chunks.map((c, i) => `[Source ${i + 1}: ${c.document_title}]\n${c.chunk_text}`).join('\n\n---\n\n')
+    : 'No governance documents have been uploaded yet.'
+
+  const userContent = `QUESTION: ${question}
+
+RETRIEVED DOCUMENT EXCERPTS:
+${context}`
+
+  const message = await client.messages.create({
+    model: AI_CONFIG.model,
+    max_tokens: AI_CONFIG.maxTokens,
+    system: GOVERNANCE_SYSTEM_PROMPT,
+    messages: [
+      ...history,
+      { role: 'user', content: userContent },
+    ],
+  })
+
+  const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}'
+
+  let parsed: {
+    direct_answer?: string
+    document_evidence?: string | null
+    gaps?: string | null
+    practical_guidance?: string | null
+    confidence?: string
+  } = {}
+
+  try {
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : responseText)
+  } catch {
+    // Fallback: treat whole response as direct answer
+    parsed = { direct_answer: responseText, confidence: 'low' }
+  }
+
+  const direct_answer = parsed.direct_answer?.trim() || question
+  const document_evidence = parsed.document_evidence || null
+  const gaps = parsed.gaps || null
+  const practical_guidance = parsed.practical_guidance || null
+
+  const rawConf = (parsed.confidence ?? 'low').toLowerCase()
+  const confidence = (['high', 'medium', 'low'].includes(rawConf) ? rawConf : 'low') as GovernanceAnswer['confidence']
+
+  return {
+    answer: direct_answer,
+    direct_answer,
+    document_evidence,
+    gaps,
+    practical_guidance,
+    confidence,
+    sources,
+  }
 }
 
 export async function generateMinutes(

@@ -33,8 +33,8 @@ export default async function AskPage() {
   return (
     <div>
       <Header
-        title="Ask AI"
-        description="Ask questions grounded only in your uploaded governance documents."
+        title="Governance Assistant"
+        description="Ask about board governance, policies, and best practices. Grounded in your documents, informed by general governance knowledge."
       />
       <AskAIClient recentQueries={recentQueries ?? []} />
     </div>

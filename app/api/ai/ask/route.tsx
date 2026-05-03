@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { question } = await request.json()
+  const body = await request.json()
+  const { question, history = [] } = body
   if (!question?.trim()) {
     return NextResponse.json({ error: 'Question is required' }, { status: 400 })
   }
@@ -36,47 +37,17 @@ export async function POST(request: NextRequest) {
     .select('id, title')
     .eq('status', 'active')
 
-  if (!activeDocs || activeDocs.length === 0) {
-    const result = {
-      answer: 'No documents have been uploaded yet. Please upload governance documents before asking questions.',
-      confidence: 'insufficient',
-      sources: [],
-    }
-    await serviceSupabase.from('ai_queries').insert({
-      user_id: profile.id,
-      question,
-      answer: result.answer,
-      confidence: result.confidence,
-      sources_used: result.sources,
-    })
-    return NextResponse.json(result)
-  }
-
   const docTitleMap: Record<string, string> = {}
-  for (const d of activeDocs) docTitleMap[d.id] = d.title
+  for (const d of (activeDocs ?? [])) docTitleMap[d.id] = d.title
   const activeDocIds = Object.keys(docTitleMap)
 
-  // Fetch all chunks for active documents
-  const { data: chunks } = await serviceSupabase
-    .from('document_chunks')
-    .select('id, document_id, chunk_text, chunk_index, embedding')
-    .in('document_id', activeDocIds)
-
-  if (!chunks || chunks.length === 0) {
-    const result = {
-      answer: 'The uploaded documents have not been processed yet. Please open each document and click "Re-process" to extract and index its content.',
-      confidence: 'insufficient',
-      sources: [],
-    }
-    await serviceSupabase.from('ai_queries').insert({
-      user_id: profile.id,
-      question,
-      answer: result.answer,
-      confidence: result.confidence,
-      sources_used: result.sources,
-    })
-    return NextResponse.json(result)
-  }
+  // Fetch all chunks for active documents (empty array is fine — Claude handles no-doc gracefully)
+  const { data: chunks } = activeDocIds.length > 0
+    ? await serviceSupabase
+        .from('document_chunks')
+        .select('id, document_id, chunk_text, chunk_index, embedding')
+        .in('document_id', activeDocIds)
+    : { data: [] }
 
   // Rank chunks by cosine similarity
   const scored = chunks
@@ -95,7 +66,7 @@ export async function POST(request: NextRequest) {
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, AI_CONFIG.maxChunksForRAG)
 
-  const result = await askGovernanceQuestion(question, scored)
+  const result = await askGovernanceQuestion(question, scored, history)
 
   await serviceSupabase.from('ai_queries').insert({
     user_id: profile.id,
