@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import {
@@ -49,10 +50,20 @@ function NavContent({
 }) {
   return (
     <>
-      <div className="px-6 py-5 border-b border-slate-700">
-        <h1 className="text-xl font-bold tracking-tight">BoardOS</h1>
-        <p className="text-xs text-slate-400 mt-0.5">NRCS Governance Portal</p>
-      </div>
+      <Link href="/dashboard" className="flex items-center px-6 py-4 border-b border-slate-700 hover:bg-slate-800 transition-colors">
+        <Image
+          src="/nrcs-logo.png"
+          alt="NRCS"
+          width={48}
+          height={48}
+          className="rounded"
+          priority
+        />
+        <div className="ml-3">
+          <p className="text-sm font-bold tracking-tight leading-tight">BoardOS</p>
+          <p className="text-xs text-slate-400 leading-tight">Governance Portal</p>
+        </div>
+      </Link>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map(({ href, label, icon: Icon }) => {
@@ -146,7 +157,10 @@ export function Sidebar({ userRole, userName }: SidebarProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <span className="text-base font-bold tracking-tight">BoardOS</span>
+        <Link href="/dashboard" className="flex items-center gap-2">
+          <Image src="/nrcs-logo.png" alt="NRCS" width={32} height={32} className="rounded" priority />
+          <span className="text-base font-bold tracking-tight">BoardOS</span>
+        </Link>
       </div>
 
       {/* Mobile drawer */}
