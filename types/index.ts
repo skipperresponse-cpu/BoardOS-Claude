@@ -36,6 +36,15 @@ export interface Profile {
   created_at: string
 }
 
+export interface DocumentFolder {
+  id: string
+  name: string
+  is_system: boolean
+  created_at: string
+  created_by: string | null
+  document_count?: number
+}
+
 export interface Document {
   id: string
   title: string
@@ -43,12 +52,14 @@ export interface Document {
   description: string | null
   file_path: string
   extracted_text: string | null
-  uploaded_by: string
+  uploaded_by: string | null
+  folder_id: string | null
   document_date: string | null
   status: DocumentStatus
   created_at: string
   updated_at: string
-  uploader?: Profile
+  uploader?: { full_name: string; email?: string } | null
+  folder?: { id: string; name: string } | null
 }
 
 export interface DocumentChunk {
