@@ -30,22 +30,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Proposal text is required' }, { status: 400 })
   }
 
-  let linkedDocsSummary = ''
+  try {
+    let linkedDocsSummary = ''
 
-  if (linkedDocumentIds?.length) {
-    const serviceSupabase = await createServiceClient()
-    const { data: docs } = await serviceSupabase
-      .from('documents')
-      .select('title, extracted_text')
-      .in('id', linkedDocumentIds)
+    if (linkedDocumentIds?.length) {
+      const serviceSupabase = await createServiceClient()
+      const { data: docs } = await serviceSupabase
+        .from('documents')
+        .select('title, extracted_text')
+        .in('id', linkedDocumentIds)
 
-    if (docs) {
-      linkedDocsSummary = docs
-        .map((d) => `${d.title}:\n${(d.extracted_text ?? '').substring(0, 2000)}`)
-        .join('\n\n---\n\n')
+      if (docs) {
+        linkedDocsSummary = docs
+          .map((d) => `${d.title}:\n${(d.extracted_text ?? '').substring(0, 2000)}`)
+          .join('\n\n---\n\n')
+      }
     }
-  }
 
-  const summary = await summariseProposal(proposalText, linkedDocsSummary)
-  return NextResponse.json(summary)
+    const summary = await summariseProposal(proposalText, linkedDocsSummary)
+    return NextResponse.json(summary)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[ai/summarise-proposal] pipeline failed: ${message}`)
+    return NextResponse.json(
+      { error: 'Failed to summarise proposal. Please try again.' },
+      { status: 500 }
+    )
+  }
 }

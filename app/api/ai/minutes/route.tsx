@@ -33,11 +33,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Transcript is required' }, { status: 400 })
   }
 
-  const result = await generateMinutes(
-    transcript,
-    agenda ?? '',
-    meetingDetails ?? { title: 'Board Meeting', date: new Date().toISOString(), attendees: [], absentees: [] }
-  )
+  try {
+    const result = await generateMinutes(
+      transcript,
+      agenda ?? '',
+      meetingDetails ?? { title: 'Board Meeting', date: new Date().toISOString(), attendees: [], absentees: [] }
+    )
 
-  return NextResponse.json(result)
+    return NextResponse.json(result)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[ai/minutes] pipeline failed: ${message}`)
+    return NextResponse.json(
+      { error: 'Failed to generate minutes. Please try again.' },
+      { status: 500 }
+    )
+  }
 }
