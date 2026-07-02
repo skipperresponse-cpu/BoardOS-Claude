@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { askGovernanceQuestion, cosineSimilarity } from '@/lib/ai/claude'
 import { generateEmbedding } from '@/lib/ai/embeddings'
 import { AI_CONFIG } from '@/lib/ai/config'
+import { enforceAiRateLimit } from '@/lib/ai/rate-limit'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -24,6 +25,14 @@ export async function POST(request: NextRequest) {
 
   if (!profile || profile.role === 'viewer') {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
+  }
+
+  const rate = await enforceAiRateLimit(profile.id, 'ai/ask')
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: `AI usage limit reached (${rate.limit}/hour). Please try again later.` },
+      { status: 429 }
+    )
   }
 
   const serviceSupabase = await createServiceClient()
@@ -50,7 +59,7 @@ export async function POST(request: NextRequest) {
     : { data: [] }
 
   // Rank chunks by cosine similarity
-  const scored = chunks
+  const scored = (chunks ?? [])
     .filter((c) => c.embedding)
     .map((c) => {
       const emb = typeof c.embedding === 'string'

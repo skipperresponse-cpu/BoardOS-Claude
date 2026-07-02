@@ -82,7 +82,7 @@ RETRIEVED DOCUMENT EXCERPTS:
 ${context}`
 
   const message = await client.messages.create({
-    model: AI_CONFIG.model,
+    model: AI_CONFIG.qaModel,
     max_tokens: AI_CONFIG.maxTokens,
     system: GOVERNANCE_SYSTEM_PROMPT,
     messages: [

@@ -1,12 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { summariseProposal } from '@/lib/ai/claude'
+import { enforceAiRateLimit } from '@/lib/ai/rate-limit'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (profile) {
+    const rate = await enforceAiRateLimit(profile.id, 'ai/summarise-proposal')
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: `AI usage limit reached (${rate.limit}/hour). Please try again later.` },
+        { status: 429 }
+      )
+    }
+  }
 
   const { proposalText, linkedDocumentIds } = await request.json()
   if (!proposalText?.trim()) {

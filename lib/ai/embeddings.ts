@@ -1,30 +1,59 @@
 import { AI_CONFIG } from './config'
 
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.EMBEDDING_API_KEY ?? process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.EMBEDDING_API_KEY
+  const isProd = process.env.NODE_ENV === 'production'
 
-  // Use Voyage AI if EMBEDDING_API_KEY is set, otherwise fall back to simple TF-IDF-style hashing
-  if (process.env.EMBEDDING_API_KEY) {
-    const response = await fetch('https://api.voyageai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.EMBEDDING_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: [text.substring(0, 8000)],
-        model: 'voyage-3',
-      }),
-    })
+  if (apiKey) {
+    try {
+      const response = await fetch('https://api.voyageai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: [text.substring(0, 8000)],
+          model: 'voyage-3.5-lite',
+          // voyage-3.5 / voyage-3.5-lite support configurable output dimensions.
+          // Request 512 to match the DB schema (vector(512)).
+          output_dimension: 512,
+        }),
+      })
 
-    if (response.ok) {
-      const data = await response.json()
-      return data.data[0].embedding
+      if (response.ok) {
+        const data = await response.json()
+        return data.data[0].embedding
+      }
+
+      const detail = await response.text().catch(() => '')
+      throw new Error(
+        `Voyage embeddings API returned ${response.status} ${response.statusText}: ${detail}`
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[embeddings] Voyage embedding failed: ${message}`)
+      if (isProd) {
+        // Never silently poison the vector store in production — fail loudly.
+        throw err instanceof Error ? err : new Error(message)
+      }
+      console.warn(
+        '[embeddings] DEV ONLY: falling back to hash pseudo-embedding. RAG results will be meaningless.'
+      )
+      return simpleHashEmbedding(text)
     }
   }
 
-  // Fallback: deterministic hash-based pseudo-embedding for development
-  // Replace with a real embedding API in production
+  // No EMBEDDING_API_KEY configured.
+  const noKeyMsg = 'EMBEDDING_API_KEY is not set — real embeddings unavailable.'
+  console.error(`[embeddings] ${noKeyMsg}`)
+  if (isProd) {
+    // The silent hash fallback is exactly what poisoned the DB last time.
+    throw new Error(`[embeddings] ${noKeyMsg}`)
+  }
+  console.warn(
+    '[embeddings] DEV ONLY: falling back to hash pseudo-embedding. RAG results will be meaningless.'
+  )
   return simpleHashEmbedding(text)
 }
 
