@@ -3,18 +3,12 @@ import { notFound, redirect } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS } from '@/lib/utils'
+import { autoLockAgendaIfDeadlinePassed } from '@/lib/meetings/transition'
 import { MeetingDetailClient } from './meeting-detail-client'
 
 interface Props {
   params: Promise<{ id: string }>
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  scheduled: 'bg-blue-100 text-blue-700',
-  draft_minutes: 'bg-amber-100 text-amber-700',
-  approved: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
 }
 
 export default async function MeetingDetailPage({ params }: Props) {
@@ -37,6 +31,11 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   if (!meeting) notFound()
 
+  // On-read check: flip agenda_open -> agenda_locked if the deadline has passed.
+  // No cron job — computed dynamically whenever the meeting is viewed.
+  const currentStatus = await autoLockAgendaIfDeadlinePassed(meeting)
+  if (currentStatus !== meeting.status) meeting.status = currentStatus
+
   const { data: actionItems } = await supabase
     .from('action_items')
     .select('*, owner:profiles!owner_user_id(full_name)')
@@ -53,7 +52,7 @@ export default async function MeetingDetailPage({ params }: Props) {
       <Header
         title={meeting.title}
         description={formatDate(meeting.meeting_date)}
-        action={<Badge className={STATUS_COLORS[meeting.status] ?? ''}>{meeting.status.replace('_', ' ')}</Badge>}
+        action={<Badge className={MEETING_STATUS_COLORS[meeting.status] ?? ''}>{MEETING_STATUS_LABELS[meeting.status] ?? meeting.status}</Badge>}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -71,6 +70,12 @@ export default async function MeetingDetailPage({ params }: Props) {
           <Card>
             <CardHeader><CardTitle>Meeting Details</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              {meeting.agenda_deadline && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">Agenda submission deadline</p>
+                  <p className="text-sm text-slate-800">{formatDateTime(meeting.agenda_deadline)}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-slate-500 mb-1">Attendees</p>
                 {(meeting.attendees_json as string[])?.length ? (

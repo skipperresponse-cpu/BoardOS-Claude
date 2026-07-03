@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { chunkText, generateEmbedding } from '@/lib/ai/embeddings'
+import { canManageUsers } from '@/lib/roles'
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -821,12 +822,12 @@ async function seedDemoData(adminSupa: any) {
   const meetingIdMap: Record<string, string> = {}
   for (const m of MEETINGS_DATA) {
     const attendeeIds = m.attendees_names.map(n => {
-      const email = Object.keys(pidMap).find(e => pidMap[e] && BOARD_MEMBERS.concat([{ email: 'daniel@nrcs.sg', full_name: 'Daniel Tan', role: 'admin', password: '' }]).find(b => b.full_name === n && b.email === e))
+      const email = Object.keys(pidMap).find(e => pidMap[e] && BOARD_MEMBERS.concat([{ email: 'daniel@nrcs.sg', full_name: 'Daniel Tan', role: 'president', password: '' }]).find(b => b.full_name === n && b.email === e))
       return email ? pidMap[email] : null
     }).filter(Boolean)
 
     const absenteeIds = m.absentees_names.map(n => {
-      const email = Object.keys(pidMap).find(e => BOARD_MEMBERS.concat([{ email: 'daniel@nrcs.sg', full_name: 'Daniel Tan', role: 'admin', password: '' }]).find(b => b.full_name === n && b.email === e))
+      const email = Object.keys(pidMap).find(e => BOARD_MEMBERS.concat([{ email: 'daniel@nrcs.sg', full_name: 'Daniel Tan', role: 'president', password: '' }]).find(b => b.full_name === n && b.email === e))
       return email ? pidMap[email] : null
     }).filter(Boolean)
 
@@ -908,7 +909,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('user_id', user.id).single()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+  if (!canManageUsers(profile?.role)) return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
   const adminSupa = createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

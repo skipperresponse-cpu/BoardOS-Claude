@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { canManageUsers, ALL_ROLES } from '@/lib/roles'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     .eq('user_id', user.id)
     .single()
 
-  if (adminProfile?.role !== 'admin') {
+  if (!adminProfile || !canManageUsers(adminProfile.role)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
   }
 
@@ -22,6 +23,10 @@ export async function POST(request: NextRequest) {
 
   if (!email || !full_name || !role) {
     return NextResponse.json({ error: 'email, full_name, and role are required' }, { status: 400 })
+  }
+
+  if (!ALL_ROLES.includes(role)) {
+    return NextResponse.json({ error: `Invalid role: ${role}` }, { status: 400 })
   }
 
   const serviceSupabase = await createServiceClient()

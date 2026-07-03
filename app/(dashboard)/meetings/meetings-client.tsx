@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { formatDate, cn } from '@/lib/utils'
+import { formatDate, cn, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS } from '@/lib/utils'
+import { canManageMeetings } from '@/lib/roles'
 import type { Meeting, UserRole } from '@/types'
 import { CalendarDays, Plus, Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -19,13 +19,6 @@ interface Props {
   userRole: UserRole
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  scheduled: 'bg-blue-100 text-blue-700',
-  draft_minutes: 'bg-amber-100 text-amber-700',
-  approved: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
-}
-
 export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
   const [meetings, setMeetings] = useState(initialMeetings)
   const [search, setSearch] = useState('')
@@ -34,9 +27,9 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
   const [form, setForm] = useState({
     title: '',
     meeting_date: '',
+    agenda_deadline: '',
     attendees: '',
     absentees: '',
-    agenda: '',
   })
   const router = useRouter()
   const supabase = createClient()
@@ -53,21 +46,18 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
 
     const attendees = form.attendees.split(',').map((s) => s.trim()).filter(Boolean)
     const absentees = form.absentees.split(',').map((s) => s.trim()).filter(Boolean)
-    const agendaItems = form.agenda
-      .split('\n')
-      .map((line, i) => ({ id: String(i + 1), title: line.trim() }))
-      .filter((a) => a.title)
 
     const { data: meeting } = await supabase
       .from('meetings')
       .insert({
         title: form.title,
         meeting_date: form.meeting_date,
+        agenda_deadline: form.agenda_deadline || null,
         attendees_json: attendees,
         absentees_json: absentees,
-        agenda_json: agendaItems,
+        agenda_json: [],
         created_by: profile?.id,
-        status: 'scheduled',
+        status: 'draft',
       })
       .select()
       .single()
@@ -76,7 +66,7 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
     if (meeting) {
       setMeetings((prev) => [meeting, ...prev])
       setShowCreate(false)
-      setForm({ title: '', meeting_date: '', attendees: '', absentees: '', agenda: '' })
+      setForm({ title: '', meeting_date: '', agenda_deadline: '', attendees: '', absentees: '' })
       router.push(`/meetings/${meeting.id}`)
     }
   }
@@ -93,7 +83,7 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
             className="pl-9"
           />
         </div>
-        {userRole === 'admin' && (
+        {canManageMeetings(userRole) && (
           <Button onClick={() => setShowCreate(!showCreate)}>
             <Plus className="h-4 w-4" />
             New Meeting
@@ -117,6 +107,12 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
+                <Label htmlFor="m-deadline">Agenda submission deadline</Label>
+                <Input id="m-deadline" type="datetime-local" value={form.agenda_deadline} onChange={(e) => setForm({ ...form, agenda_deadline: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
                 <Label htmlFor="m-attendees">Attendees (comma-separated)</Label>
                 <Input id="m-attendees" value={form.attendees} onChange={(e) => setForm({ ...form, attendees: e.target.value })} placeholder="Jane Smith, John Doe" />
               </div>
@@ -125,10 +121,9 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
                 <Input id="m-absentees" value={form.absentees} onChange={(e) => setForm({ ...form, absentees: e.target.value })} placeholder="Bob Jones" />
               </div>
             </div>
-            <div>
-              <Label htmlFor="m-agenda">Agenda Items (one per line)</Label>
-              <Textarea id="m-agenda" value={form.agenda} onChange={(e) => setForm({ ...form, agenda: e.target.value })} placeholder="Welcome and apologies&#10;Confirmation of previous minutes&#10;Finance report&#10;..." rows={4} />
-            </div>
+            <p className="text-xs text-slate-500">
+              Meeting is created in Draft status. Open agenda submission from the meeting page when ready.
+            </p>
             <div className="flex gap-3">
               <Button type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Meeting'}</Button>
               <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
@@ -153,8 +148,8 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
                   <p className="font-medium text-slate-900 text-sm truncate">{m.title}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{formatDate(m.meeting_date)}</p>
                 </div>
-                <Badge className={STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
-                  {m.status.replace('_', ' ')}
+                <Badge className={MEETING_STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
+                  {MEETING_STATUS_LABELS[m.status] ?? m.status}
                 </Badge>
               </Link>
             ))}
@@ -177,8 +172,8 @@ export function MeetingsClient({ meetings: initialMeetings, userRole }: Props) {
                     <td className="px-6 py-4 font-medium text-slate-900">{m.title}</td>
                     <td className="px-6 py-4 text-slate-500">{formatDate(m.meeting_date)}</td>
                     <td className="px-6 py-4 hidden md:table-cell">
-                      <Badge className={STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
-                        {m.status.replace('_', ' ')}
+                      <Badge className={MEETING_STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
+                        {MEETING_STATUS_LABELS[m.status] ?? m.status}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-right">

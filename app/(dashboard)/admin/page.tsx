@@ -7,6 +7,7 @@ import { formatDate } from '@/lib/utils'
 import { AdminUsersClient } from './admin-users-client'
 import { AdminAuditLog } from './admin-audit-log'
 import { AdminSeedClient } from './admin-seed-client'
+import { canManageUsers } from '@/lib/roles'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -19,7 +20,7 @@ export default async function AdminPage() {
     .eq('user_id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') redirect('/')
+  if (!canManageUsers(profile?.role)) redirect('/')
 
   const { data: profiles } = await supabase
     .from('profiles')

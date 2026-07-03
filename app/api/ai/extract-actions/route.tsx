@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { extractActionItems } from '@/lib/ai/claude'
+import { canManageMeetings } from '@/lib/roles'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -14,8 +15,8 @@ export async function POST(request: NextRequest) {
     .eq('user_id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'admin') {
-    return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+  if (!profile || !canManageMeetings(profile.role)) {
+    return NextResponse.json({ error: 'Meeting management access required' }, { status: 403 })
   }
 
   const { minutes } = await request.json()

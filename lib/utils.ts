@@ -53,6 +53,28 @@ export const ACTION_STATUS_COLORS: Record<string, string> = {
   Blocked: 'bg-red-100 text-red-700',
 }
 
+export const MEETING_STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-slate-100 text-slate-600',
+  agenda_open: 'bg-blue-100 text-blue-700',
+  agenda_locked: 'bg-amber-100 text-amber-700',
+  scheduled: 'bg-indigo-100 text-indigo-700',
+  held: 'bg-teal-100 text-teal-700',
+  minutes_drafted: 'bg-yellow-100 text-yellow-700',
+  minutes_approved: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
+}
+
+export const MEETING_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  agenda_open: 'Agenda Open',
+  agenda_locked: 'Agenda Locked',
+  scheduled: 'Scheduled',
+  held: 'Held',
+  minutes_drafted: 'Minutes Drafted',
+  minutes_approved: 'Minutes Approved',
+  cancelled: 'Cancelled',
+}
+
 export const APPROVAL_STATUS_COLORS: Record<string, string> = {
   open: 'bg-blue-100 text-blue-700',
   paused: 'bg-yellow-100 text-yellow-700',

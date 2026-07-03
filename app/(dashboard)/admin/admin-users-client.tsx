@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Select } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { formatDate } from '@/lib/utils'
+import { ALL_ROLES, ROLE_LABELS } from '@/lib/roles'
 import type { Profile, UserRole } from '@/types'
 import {
   Plus, UserPlus, Mail, RefreshCw, Copy, Check,
@@ -13,18 +14,6 @@ import {
 
 interface Props {
   profiles: Profile[]
-}
-
-const ROLE_COLORS: Record<UserRole, string> = {
-  admin:        'bg-purple-100 text-purple-700',
-  board_member: 'bg-blue-100 text-blue-700',
-  viewer:       'bg-slate-100 text-slate-600',
-}
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin:        'Admin',
-  board_member: 'Board Member',
-  viewer:       'Viewer',
 }
 
 // ─── Password generator ───────────────────────────────────────────────────────
@@ -280,9 +269,9 @@ export function AdminUsersClient({ profiles: initial }: Props) {
                   onChange={e => setForm({ ...form, role: e.target.value as UserRole })}
                   className="w-full"
                 >
-                  <option value="board_member">Board Member</option>
-                  <option value="viewer">Viewer</option>
-                  <option value="admin">Admin</option>
+                  {ALL_ROLES.map(r => (
+                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  ))}
                 </Select>
               </div>
             </div>
@@ -358,9 +347,9 @@ export function AdminUsersClient({ profiles: initial }: Props) {
                 <div>
                   <Label className="text-xs font-medium text-slate-600 mb-1 block">Role *</Label>
                   <Select value={inviteForm.role} onChange={e => setInviteForm({ ...inviteForm, role: e.target.value as UserRole })}>
-                    <option value="board_member">Board Member</option>
-                    <option value="viewer">Viewer</option>
-                    <option value="admin">Admin</option>
+                    {ALL_ROLES.map(r => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
                   </Select>
                 </div>
               </div>
@@ -416,9 +405,9 @@ export function AdminUsersClient({ profiles: initial }: Props) {
                     onChange={e => updateRole(p.id, e.target.value as UserRole)}
                     className="w-36 text-xs"
                   >
-                    <option value="admin">Admin</option>
-                    <option value="board_member">Board Member</option>
-                    <option value="viewer">Viewer</option>
+                    {ALL_ROLES.map(r => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
                   </Select>
                 </td>
                 <td className="px-6 py-3.5 text-slate-400 text-xs hidden md:table-cell">{formatDate(p.created_at)}</td>

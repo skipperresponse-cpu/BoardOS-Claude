@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { APPROVAL_STATUS_COLORS, formatDate, cn } from '@/lib/utils'
+import { isAdminEquivalent } from '@/lib/roles'
 import type { ApprovalItem, ApprovalType, UserRole } from '@/types'
 import { Vote, Plus } from 'lucide-react'
 import Link from 'next/link'
@@ -81,7 +82,7 @@ export function ApprovalsClient({ approvals: initial, documents, meetings, userR
           <option value="rejected">Rejected</option>
           <option value="archived">Archived</option>
         </Select>
-        {userRole === 'admin' && (
+        {isAdminEquivalent(userRole) && (
           <Button onClick={() => setShowCreate(!showCreate)} className="ml-auto">
             <Plus className="h-4 w-4" />
             New Approval

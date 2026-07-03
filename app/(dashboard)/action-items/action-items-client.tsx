@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ACTION_STATUS_COLORS, formatDate, isOverdue, cn } from '@/lib/utils'
+import { canManageActionItems } from '@/lib/roles'
 import type { ActionItem, ActionItemStatus, UserRole } from '@/types'
 import { CheckSquare, Plus, AlertCircle } from 'lucide-react'
 
@@ -85,7 +86,7 @@ export function ActionItemsClient({ actionItems: initial, profiles, userRole, cu
           <option value="mine">Assigned to me</option>
           {profiles.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
         </Select>
-        {userRole === 'admin' && (
+        {canManageActionItems(userRole) && (
           <Button onClick={() => setShowCreate(!showCreate)} className="sm:ml-auto">
             <Plus className="h-4 w-4" />
             Add Action Item

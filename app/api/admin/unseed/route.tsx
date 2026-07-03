@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { canManageUsers } from '@/lib/roles'
 
 const DEMO_EMAILS = [
   'sarah.lim@nrcs.sg',
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('user_id', user.id).single()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+  if (!canManageUsers(profile?.role)) return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supa: any = createSupabaseClient(

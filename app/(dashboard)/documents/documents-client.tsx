@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { DOCUMENT_CATEGORIES, formatDate, cn } from '@/lib/utils'
+import { canManageDocuments } from '@/lib/roles'
 import type { Document, DocumentCategory, DocumentFolder, UserRole } from '@/types'
 import {
   Upload, Search, FileText, X, LayoutList, LayoutGrid,
@@ -240,7 +241,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
   return (
     <div>
       {/* Upload button */}
-      {userRole === 'admin' && (
+      {canManageDocuments(userRole) && (
         <div className="flex justify-end mb-4">
           <Button
             onClick={() => { setShowUpload(v => !v); if (showUpload) resetForm() }}
@@ -310,7 +311,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                       </button>
                       <div className="flex items-center gap-1 pr-2 flex-shrink-0">
                         <span className="text-xs text-slate-400">{count}</span>
-                        {userRole === 'admin' && count === 0 && (
+                        {canManageDocuments(userRole) && count === 0 && (
                           <button
                             onClick={() => handleDeleteFolder(f)}
                             className="p-1 rounded text-slate-300 hover:text-red-500 transition-colors"
@@ -604,7 +605,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                           >
                             <Download className="h-4 w-4" />
                           </button>
-                          {userRole === 'admin' && (
+                          {canManageDocuments(userRole) && (
                             <button
                               onClick={() => handleDeleteDocument(doc)}
                               disabled={deletingDocId === doc.id}
@@ -640,7 +641,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                         >
                           <Download className="h-3.5 w-3.5" />
                         </button>
-                        {userRole === 'admin' && (
+                        {canManageDocuments(userRole) && (
                           <button
                             onClick={() => handleDeleteDocument(doc)}
                             disabled={deletingDocId === doc.id}

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { DocumentActions } from './document-actions'
+import { canManageDocuments } from '@/lib/roles'
 import { FileText, Calendar, User, Tag } from 'lucide-react'
 
 interface Props {
@@ -45,7 +46,7 @@ export default async function DocumentDetailPage({ params }: Props) {
         title={doc.title}
         description={doc.description ?? undefined}
         action={
-          profile?.role === 'admin' ? (
+          canManageDocuments(profile?.role) ? (
             <DocumentActions documentId={doc.id} currentStatus={doc.status} />
           ) : undefined
         }

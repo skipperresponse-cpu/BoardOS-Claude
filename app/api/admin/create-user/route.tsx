@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
+import { canManageUsers, ALL_ROLES } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
 
   const { data: adminProfile } = await supabase
     .from('profiles').select('id, role').eq('user_id', user.id).single()
-  if (adminProfile?.role !== 'admin') {
+  if (!adminProfile || !canManageUsers(adminProfile.role)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
   }
 
@@ -23,6 +24,9 @@ export async function POST(request: NextRequest) {
   }
   if (password.length < 8) {
     return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
+  }
+  if (!ALL_ROLES.includes(role)) {
+    return NextResponse.json({ error: `Invalid role: ${role}` }, { status: 400 })
   }
 
   // Use raw supabase-js client (not SSR wrapper) for auth.admin operations

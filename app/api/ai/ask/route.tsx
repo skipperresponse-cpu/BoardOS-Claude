@@ -4,6 +4,7 @@ import { askGovernanceQuestion, cosineSimilarity } from '@/lib/ai/claude'
 import { generateEmbedding } from '@/lib/ai/embeddings'
 import { AI_CONFIG } from '@/lib/ai/config'
 import { enforceAiRateLimit } from '@/lib/ai/rate-limit'
+import { canUseAI } from '@/lib/roles'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     .eq('user_id', user.id)
     .single()
 
-  if (!profile || profile.role === 'viewer') {
+  if (!profile || !canUseAI(profile.role)) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
   }
 

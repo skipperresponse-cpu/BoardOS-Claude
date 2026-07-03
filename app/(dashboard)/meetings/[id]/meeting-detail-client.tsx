@@ -9,9 +9,10 @@ import { Select } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ACTION_STATUS_COLORS, formatDate, cn } from '@/lib/utils'
+import { ACTION_STATUS_COLORS, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS, formatDate, cn } from '@/lib/utils'
+import { canManageMeetings, isAdminEquivalent } from '@/lib/roles'
 import type { Meeting, ActionItem, ActionItemStatus, UserRole } from '@/types'
-import { Sparkles, Save, Plus, CheckSquare } from 'lucide-react'
+import { Sparkles, Save, Plus, CheckSquare, ArrowRight, Undo2, Ban } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -37,7 +38,26 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
   const router = useRouter()
   const supabase = createClient()
 
-  const isAdmin = userRole === 'admin'
+  const [transitioning, setTransitioning] = useState(false)
+  const isAdmin = canManageMeetings(userRole)
+  const isHeldOrLater = ['held', 'minutes_drafted', 'minutes_approved'].includes(meeting.status)
+  const canCancel = meeting.status !== 'cancelled' && meeting.status !== 'minutes_approved'
+
+  async function transitionTo(toStatus: string) {
+    setTransitioning(true)
+    const res = await fetch(`/api/meetings/${meeting.id}/transition`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toStatus }),
+    })
+    setTransitioning(false)
+    if (res.ok) {
+      router.refresh()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      alert(data.error ?? 'Transition failed')
+    }
+  }
 
   async function generateMinutes() {
     setGeneratingMinutes(true)
@@ -89,8 +109,15 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
       await supabase.from('meetings').update({
         transcript_text: transcript,
         draft_minutes: data.minutes,
-        status: 'draft_minutes',
       }).eq('id', meeting.id)
+
+      // First draft: advance held -> minutes_drafted. Regenerating a draft
+      // after that stays at minutes_drafted (transition would be a no-op ladder step).
+      if (meeting.status === 'held') {
+        await transitionTo('minutes_drafted')
+      } else {
+        router.refresh()
+      }
     }
     setGeneratingMinutes(false)
   }
@@ -108,11 +135,10 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
     setApprovingMinutes(true)
     await supabase.from('meetings').update({
       final_minutes: draftMinutes,
-      status: 'approved',
     }).eq('id', meeting.id)
     setFinalMinutes(draftMinutes)
     setApprovingMinutes(false)
-    router.refresh()
+    await transitionTo('minutes_approved')
   }
 
   async function handleAddAction(e: React.FormEvent) {
@@ -148,6 +174,50 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
 
   return (
     <div className="space-y-4">
+      {/* Status controls */}
+      {isAdmin && (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={cn(MEETING_STATUS_COLORS[meeting.status])}>
+              {MEETING_STATUS_LABELS[meeting.status] ?? meeting.status}
+            </Badge>
+
+            {meeting.status === 'draft' && (
+              <Button size="sm" disabled={transitioning} onClick={() => transitionTo('agenda_open')}>
+                <ArrowRight className="h-3.5 w-3.5" /> Open Agenda Submission
+              </Button>
+            )}
+
+            {meeting.status === 'agenda_locked' && (
+              <>
+                <Button size="sm" disabled={transitioning} onClick={() => transitionTo('scheduled')}>
+                  <ArrowRight className="h-3.5 w-3.5" /> Schedule Meeting
+                </Button>
+                {isAdminEquivalent(userRole) && (
+                  <Button size="sm" variant="secondary" disabled={transitioning} onClick={() => transitionTo('agenda_open')}>
+                    <Undo2 className="h-3.5 w-3.5" /> Reopen Agenda Submission
+                  </Button>
+                )}
+              </>
+            )}
+
+            {meeting.status === 'scheduled' && (
+              <Button size="sm" disabled={transitioning} onClick={() => transitionTo('held')}>
+                <ArrowRight className="h-3.5 w-3.5" /> Mark as Held
+              </Button>
+            )}
+
+            {canCancel && (
+              <Button size="sm" variant="secondary" disabled={transitioning} onClick={() => {
+                if (confirm('Cancel this meeting? This cannot be undone.')) transitionTo('cancelled')
+              }}>
+                <Ban className="h-3.5 w-3.5" /> Cancel Meeting
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-slate-200">
         {tabs.map((tab) => (
@@ -170,7 +240,11 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
       {activeTab === 'transcript' && (
         <Card>
           <CardContent className="pt-6 space-y-4">
-            {isAdmin ? (
+            {!isHeldOrLater ? (
+              <p className="text-sm text-slate-500 italic">
+                The meeting must be marked Held before a transcript and minutes can be recorded.
+              </p>
+            ) : isAdmin ? (
               <>
                 <Textarea
                   value={transcript}
@@ -211,6 +285,10 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
                   {meeting.final_minutes}
                 </div>
               </div>
+            ) : !isHeldOrLater ? (
+              <p className="text-sm text-slate-500 italic">
+                The meeting must be marked Held before minutes can be recorded.
+              </p>
             ) : isAdmin ? (
               <>
                 <Textarea

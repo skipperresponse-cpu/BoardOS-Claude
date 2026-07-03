@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Header } from '@/components/layout/header'
 import { AskAIClient } from './ask-ai-client'
 import { redirect } from 'next/navigation'
+import { canUseAI } from '@/lib/roles'
 
 export default async function AskPage() {
   const supabase = await createClient()
@@ -14,7 +15,7 @@ export default async function AskPage() {
     .eq('user_id', user.id)
     .single()
 
-  if (profile?.role === 'viewer') {
+  if (!canUseAI(profile?.role)) {
     return (
       <div>
         <Header title="Governance Assistant" />

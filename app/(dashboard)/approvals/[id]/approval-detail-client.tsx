@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { APPROVAL_STATUS_COLORS, formatDate, timeAgo, cn } from '@/lib/utils'
+import { isAdminEquivalent, canVoteApprovals, canUseAI } from '@/lib/roles'
 import type { ApprovalItem, ApprovalVote, ApprovalComment, VoteOption, ApprovalStatus, UserRole } from '@/types'
 import { MessageSquare, Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -51,7 +52,7 @@ export function ApprovalDetailClient({ item, votes: initialVotes, comments: init
   const supabase = createClient()
 
   const isOpen = item.status === 'open'
-  const canVote = userRole !== 'viewer' && isOpen
+  const canVote = canVoteApprovals(userRole) && isOpen
 
   async function castVote(vote: VoteOption) {
     setSubmittingVote(true)
@@ -133,7 +134,7 @@ export function ApprovalDetailClient({ item, votes: initialVotes, comments: init
   return (
     <div className="space-y-4">
       {/* Admin Controls */}
-      {userRole === 'admin' && (
+      {isAdminEquivalent(userRole) && (
         <div className="flex flex-wrap gap-2">
           {item.status === 'open' && (
             <>
@@ -180,7 +181,7 @@ export function ApprovalDetailClient({ item, votes: initialVotes, comments: init
             </CardContent>
           </Card>
 
-          {userRole !== 'viewer' && !aiSummary && (
+          {canUseAI(userRole) && !aiSummary && (
             <Button variant="secondary" size="sm" onClick={generateSummary} disabled={generatingSummary}>
               <Sparkles className="h-4 w-4" />
               {generatingSummary ? 'Generating AI Summary...' : 'Generate AI Summary'}
@@ -291,7 +292,7 @@ export function ApprovalDetailClient({ item, votes: initialVotes, comments: init
       {/* Comments Tab */}
       {activeTab === 'comments' && (
         <div className="space-y-4">
-          {userRole !== 'viewer' && isOpen && (
+          {canVoteApprovals(userRole) && isOpen && (
             <Card>
               <CardContent className="pt-6">
                 <Textarea

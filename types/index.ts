@@ -1,4 +1,11 @@
-export type UserRole = 'admin' | 'board_member' | 'viewer'
+export type UserRole =
+  | 'president'
+  | 'secretary'
+  | 'treasurer'
+  | 'board_member'
+  | 'administrator'
+  | 'advisor'
+  | 'viewer'
 
 export type DocumentCategory =
   | 'Constitution'
@@ -19,7 +26,15 @@ export type DocumentStatus = 'active' | 'archived' | 'draft'
 
 export type ActionItemStatus = 'Not Started' | 'In Progress' | 'Done' | 'Blocked'
 
-export type MeetingStatus = 'scheduled' | 'draft_minutes' | 'approved' | 'cancelled'
+export type MeetingStatus =
+  | 'draft'
+  | 'agenda_open'
+  | 'agenda_locked'
+  | 'scheduled'
+  | 'held'
+  | 'minutes_drafted'
+  | 'minutes_approved'
+  | 'cancelled'
 
 export type ApprovalStatus = 'open' | 'paused' | 'closed' | 'approved' | 'rejected' | 'archived'
 
@@ -82,6 +97,7 @@ export interface Meeting {
   draft_minutes: string | null
   final_minutes: string | null
   status: MeetingStatus
+  agenda_deadline: string | null
   created_by: string
   created_at: string
   updated_at: string

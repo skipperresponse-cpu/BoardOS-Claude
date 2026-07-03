@@ -19,6 +19,7 @@ import {
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { canManageUsers, ROLE_LABELS } from '@/lib/roles'
 import type { UserRole } from '@/types'
 
 const navItems = [
@@ -86,7 +87,7 @@ function NavContent({
           )
         })}
 
-        {userRole === 'admin' && (
+        {canManageUsers(userRole) && (
           <Link
             href="/admin"
             onClick={onNavClick}
@@ -110,7 +111,7 @@ function NavContent({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">{userName}</p>
-            <p className="text-xs text-slate-400 capitalize">{userRole.replace('_', ' ')}</p>
+            <p className="text-xs text-slate-400">{ROLE_LABELS[userRole] ?? userRole}</p>
           </div>
         </div>
         <button

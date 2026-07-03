@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { generateResolution } from '@/lib/ai/claude'
 import { logAudit } from '@/lib/audit'
+import { isAdminEquivalent } from '@/lib/roles'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
     .eq('user_id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'admin') {
+  if (!profile || !isAdminEquivalent(profile.role)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
   }
 
