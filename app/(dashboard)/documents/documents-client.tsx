@@ -78,9 +78,11 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
   const supabase = createClient()
 
   const generalFolder = useMemo(() => folders.find(f => f.name === 'General'), [folders])
-  const systemFolders = useMemo(() => folders.filter(f => f.is_system), [folders])
-  const customFolders = useMemo(
-    () => [...folders.filter(f => !f.is_system)].sort((a, b) => a.name.localeCompare(b.name)),
+  // Single flat, alphabetised directory — no system/custom split in the UI.
+  // is_system still exists in the data model (protects seeded folders from
+  // deletion), it's just not surfaced as a separate section anymore.
+  const sortedFolders = useMemo(
+    () => [...folders].sort((a, b) => a.name.localeCompare(b.name)),
     [folders]
   )
 
@@ -148,6 +150,10 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
     }
     if (showNewFolderInput && !newFolderName.trim()) {
       setUploadError('Enter a name for the new folder.')
+      return
+    }
+    if (!showNewFolderInput && !form.folder_id) {
+      setUploadError('Every document must be assigned to a folder.')
       return
     }
 
@@ -230,6 +236,19 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
     }
   }
 
+  async function moveDocument(doc: DocWithFolder, folderId: string) {
+    if (folderId === doc.folder_id) return
+    const targetFolder = folders.find(f => f.id === folderId) ?? null
+    setDocuments(prev => prev.map(d =>
+      d.id === doc.id ? { ...d, folder_id: folderId, folder: targetFolder ? { id: targetFolder.id, name: targetFolder.name } : null } : d
+    ))
+    const { error } = await supabase.from('documents').update({ folder_id: folderId }).eq('id', doc.id)
+    if (error) {
+      alert('Failed to move document: ' + error.message)
+      router.refresh()
+    }
+  }
+
   async function handleDeleteFolder(folder: FolderWithCount) {
     if (!confirm(`Delete folder "${folder.name}"?`)) return
     const res = await fetch(`/api/folders/${folder.id}`, { method: 'DELETE' })
@@ -288,31 +307,12 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
               <span className="text-xs text-slate-400">{resolutions.length}</span>
             </button>
 
-            {systemFolders.length > 0 && (
+            {sortedFolders.length > 0 && (
               <div className="pt-3">
                 <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                   Folders
                 </p>
-                {systemFolders.map(f => (
-                  <button key={f.id} onClick={() => setActiveFolder(f.id)} className={folderBtnCls(f.id)}>
-                    <span className="flex items-center gap-2 truncate">
-                      <Folder className="h-4 w-4 flex-shrink-0" />
-                      <span className="truncate">{f.name}</span>
-                    </span>
-                    <span className="text-xs text-slate-400 flex-shrink-0 ml-2">
-                      {folderDocCounts[f.id] ?? 0}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {customFolders.length > 0 && (
-              <div className="pt-3">
-                <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                  Custom
-                </p>
-                {customFolders.map(f => {
+                {sortedFolders.map(f => {
                   const count = folderDocCounts[f.id] ?? 0
                   return (
                     <div
@@ -329,12 +329,14 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                           activeFolder === f.id ? 'font-semibold text-slate-900' : 'text-slate-600 hover:text-slate-900'
                         )}
                       >
-                        <FolderOpen className="h-4 w-4 flex-shrink-0" />
+                        {f.is_system
+                          ? <Folder className="h-4 w-4 flex-shrink-0" />
+                          : <FolderOpen className="h-4 w-4 flex-shrink-0" />}
                         <span className="truncate">{f.name}</span>
                       </button>
                       <div className="flex items-center gap-1 pr-2 flex-shrink-0">
                         <span className="text-xs text-slate-400">{count}</span>
-                        {canManageDocuments(userRole) && count === 0 && (
+                        {canManageDocuments(userRole) && !f.is_system && count === 0 && (
                           <button
                             onClick={() => handleDeleteFolder(f)}
                             className="p-1 rounded text-slate-300 hover:text-red-500 transition-colors"
@@ -374,7 +376,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
             >
               Resolutions ({resolutions.length})
             </button>
-            {folders.map(f => (
+            {sortedFolders.map(f => (
               <button
                 key={f.id}
                 onClick={() => setActiveFolder(f.id)}
@@ -420,18 +422,9 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                         }
                       }}
                     >
-                      <optgroup label="System Folders">
-                        {systemFolders.map(f => (
-                          <option key={f.id} value={f.id}>{f.name}</option>
-                        ))}
-                      </optgroup>
-                      {customFolders.length > 0 && (
-                        <optgroup label="Custom Folders">
-                          {customFolders.map(f => (
-                            <option key={f.id} value={f.id}>{f.name}</option>
-                          ))}
-                        </optgroup>
-                      )}
+                      {sortedFolders.map(f => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
                       <option value="__new__">+ Create new folder…</option>
                     </Select>
                     {showNewFolderInput && (
@@ -665,10 +658,19 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                         )}
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
-                        {doc.folder
-                          ? <Badge className="bg-blue-50 text-blue-700">{doc.folder.name}</Badge>
-                          : <span className="text-slate-300 text-xs">—</span>
-                        }
+                        {canManageDocuments(userRole) ? (
+                          <Select
+                            value={doc.folder_id ?? ''}
+                            onChange={(e) => moveDocument(doc, e.target.value)}
+                            className="!h-8 !py-1 text-xs w-40"
+                          >
+                            {sortedFolders.map(f => (
+                              <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                          </Select>
+                        ) : (
+                          <Badge className="bg-blue-50 text-blue-700">{doc.folder?.name ?? '—'}</Badge>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell text-xs">
                         {(doc.uploader as { full_name: string } | null)?.full_name ?? '—'}
@@ -739,8 +741,18 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                       </p>
                     </Link>
                     <div className="space-y-1">
-                      {doc.folder && (
-                        <Badge className="bg-blue-50 text-blue-700">{doc.folder.name}</Badge>
+                      {canManageDocuments(userRole) ? (
+                        <Select
+                          value={doc.folder_id ?? ''}
+                          onChange={(e) => moveDocument(doc, e.target.value)}
+                          className="!h-7 !py-0.5 text-xs"
+                        >
+                          {sortedFolders.map(f => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        doc.folder && <Badge className="bg-blue-50 text-blue-700">{doc.folder.name}</Badge>
                       )}
                       <p className="text-[11px] text-slate-400">{formatDate(doc.created_at)}</p>
                     </div>
