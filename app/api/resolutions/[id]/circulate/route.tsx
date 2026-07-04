@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { canFlagForResolution } from '@/lib/roles'
 import { logAudit } from '@/lib/audit'
+import { sendResolutionCirculatedNotice } from '@/lib/email/reminders'
 
 export async function POST(
   _request: NextRequest,
@@ -56,6 +57,7 @@ export async function POST(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   await logAudit(profile.id, 'resolution_circulated', 'resolution', id, {})
+  await sendResolutionCirculatedNotice(updated)
 
   return NextResponse.json(updated)
 }

@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { sendAgendaOpenReminder } from '@/lib/email/reminders'
 
 export const MEETING_STATUS_LADDER = [
   'draft', 'agenda_open', 'agenda_locked', 'scheduled', 'held', 'minutes_drafted', 'minutes_approved',
@@ -46,6 +47,16 @@ export async function applyMeetingTransition(
 
   if (actorProfileId) {
     await logAudit(actorProfileId, 'meeting_status_changed', 'meeting', meetingId, { to: toStatus })
+  }
+
+  // Agenda just opened for submissions — notify everyone who can submit.
+  if (toStatus === 'agenda_open') {
+    const { data: meeting } = await serviceSupabase
+      .from('meetings')
+      .select('id, title, agenda_deadline')
+      .eq('id', meetingId)
+      .single()
+    if (meeting) await sendAgendaOpenReminder(meeting)
   }
 
   // Minutes finalised: every acknowledgement item still attached to this
