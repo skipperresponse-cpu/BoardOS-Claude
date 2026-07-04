@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatDate, formatDateTime, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS } from '@/lib/utils'
 import { autoLockAgendaIfDeadlinePassed } from '@/lib/meetings/transition'
 import { MeetingDetailClient } from './meeting-detail-client'
+import { AgendaItemsClient } from './agenda-items-client'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -47,6 +48,16 @@ export default async function MeetingDetailPage({ params }: Props) {
     .select('id, full_name')
     .order('full_name')
 
+  const { data: agendaItems } = await supabase
+    .from('agenda_items')
+    .select('*, submitter:profiles!submitted_by(full_name), resolution:resolutions(*)')
+    .eq('current_meeting_id', id)
+    .order('display_order')
+    .order('created_at')
+
+  const usesNewAgenda = (agendaItems ?? []).length > 0
+  const acknowledgementItems = (agendaItems ?? []).filter((a) => a.type === 'acknowledgement')
+
   return (
     <div>
       <Header
@@ -56,13 +67,36 @@ export default async function MeetingDetailPage({ params }: Props) {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader><CardTitle>Agenda</CardTitle></CardHeader>
+            <CardContent>
+              {usesNewAgenda ? (
+                <AgendaItemsClient
+                  meetingId={id}
+                  meetingStatus={meeting.status}
+                  items={agendaItems ?? []}
+                  userRole={profile?.role ?? 'viewer'}
+                />
+              ) : (meeting.agenda_json as { id?: string; title?: string; item?: string }[])?.length > 0 ? (
+                <ol className="text-sm text-slate-800 space-y-1 list-decimal list-inside">
+                  {(meeting.agenda_json as { id?: string; title?: string; item?: string }[]).map((a, i) => (
+                    <li key={a.id ?? i}>{a.title ?? a.item}</li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-sm text-slate-400 italic">No agenda recorded.</p>
+              )}
+            </CardContent>
+          </Card>
+
           <MeetingDetailClient
             meeting={meeting}
             actionItems={actionItems ?? []}
             profiles={profiles ?? []}
             userRole={profile?.role ?? 'viewer'}
             currentProfileId={profile?.id ?? ''}
+            acknowledgementItems={acknowledgementItems}
           />
         </div>
 
@@ -90,16 +124,6 @@ export default async function MeetingDetailPage({ params }: Props) {
                   <ul className="text-sm text-slate-800 space-y-0.5">
                     {(meeting.absentees_json as string[]).map((a, i) => <li key={i}>{a}</li>)}
                   </ul>
-                </div>
-              )}
-              {(meeting.agenda_json as Array<{ id: string; title: string }>)?.length > 0 && (
-                <div>
-                  <p className="text-xs text-slate-500 mb-1">Agenda</p>
-                  <ol className="text-sm text-slate-800 space-y-1 list-decimal list-inside">
-                    {(meeting.agenda_json as Array<{ id: string; title: string }>).map((item) => (
-                      <li key={item.id}>{item.title}</li>
-                    ))}
-                  </ol>
                 </div>
               )}
             </CardContent>

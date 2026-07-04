@@ -15,11 +15,13 @@ import {
   LogOut,
   Menu,
   X,
+  Gavel,
+  ListTodo,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { canManageUsers, ROLE_LABELS } from '@/lib/roles'
+import { canManageUsers, isAdminEquivalent, ROLE_LABELS } from '@/lib/roles'
 import type { UserRole } from '@/types'
 
 const navItems = [
@@ -29,6 +31,7 @@ const navItems = [
   { href: '/meetings', label: 'Meetings', icon: CalendarDays },
   { href: '/action-items', label: 'Action Items', icon: CheckSquare },
   { href: '/approvals', label: 'Approvals', icon: Vote },
+  { href: '/resolutions', label: 'Resolutions', icon: Gavel },
 ]
 
 interface SidebarProps {
@@ -86,6 +89,22 @@ function NavContent({
             </Link>
           )
         })}
+
+        {isAdminEquivalent(userRole) && (
+          <Link
+            href="/outstanding-agenda"
+            onClick={onNavClick}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
+              pathname.startsWith('/outstanding-agenda')
+                ? 'bg-slate-700 text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            )}
+          >
+            <ListTodo className="h-4 w-4 flex-shrink-0" />
+            Outstanding Agenda
+          </Link>
+        )}
 
         {canManageUsers(userRole) && (
           <Link

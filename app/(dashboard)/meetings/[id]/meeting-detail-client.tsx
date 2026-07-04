@@ -9,9 +9,9 @@ import { Select } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ACTION_STATUS_COLORS, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS, formatDate, cn } from '@/lib/utils'
+import { ACTION_STATUS_COLORS, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS, formatDate, formatDateTime, cn } from '@/lib/utils'
 import { canManageMeetings, isAdminEquivalent } from '@/lib/roles'
-import type { Meeting, ActionItem, ActionItemStatus, UserRole } from '@/types'
+import type { Meeting, ActionItem, ActionItemStatus, UserRole, AgendaItem } from '@/types'
 import { Sparkles, Save, Plus, CheckSquare, ArrowRight, Undo2, Ban } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -21,9 +21,38 @@ interface Props {
   profiles: Array<{ id: string; full_name: string }>
   userRole: UserRole
   currentProfileId: string
+  acknowledgementItems: AgendaItem[]
 }
 
-export function MeetingDetailClient({ meeting, actionItems: initialItems, profiles, userRole, currentProfileId }: Props) {
+function AcknowledgementBlock({ items }: { items: AgendaItem[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="space-y-3 mb-4">
+      {items.map((item) => {
+        const res = item.resolution
+        if (!res) return null
+        return (
+          <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Resolution Acknowledgement
+            </p>
+            <p className="text-sm font-medium text-slate-900">{res.title}</p>
+            <p className="text-sm text-slate-700 mt-1">{res.content}</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-xs text-slate-500">
+              <span>Vote result: {res.vote_result ?? 'n/a'}</span>
+              <span>Passed: {res.passed_at ? formatDateTime(res.passed_at) : 'n/a'}</span>
+              <a href={`/resolutions/${res.id}`} className="text-indigo-600 hover:underline">
+                View resolution
+              </a>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function MeetingDetailClient({ meeting, actionItems: initialItems, profiles, userRole, currentProfileId, acknowledgementItems }: Props) {
   const [activeTab, setActiveTab] = useState<'transcript' | 'minutes' | 'actions'>('minutes')
   const [transcript, setTranscript] = useState(meeting.transcript_text ?? '')
   const [draftMinutes, setDraftMinutes] = useState(meeting.draft_minutes ?? '')
@@ -276,6 +305,7 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
       {activeTab === 'minutes' && (
         <Card>
           <CardContent className="pt-6 space-y-4">
+            <AcknowledgementBlock items={acknowledgementItems} />
             {meeting.final_minutes ? (
               <div>
                 <div className="flex items-center gap-2 mb-4">

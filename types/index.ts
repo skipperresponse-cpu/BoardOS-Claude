@@ -92,7 +92,7 @@ export interface Meeting {
   meeting_date: string
   attendees_json: string[]
   absentees_json: string[]
-  agenda_json: AgendaItem[]
+  agenda_json: LegacyAgendaItem[] // frozen read-only snapshot for meetings that predate agenda_items
   transcript_text: string | null
   draft_minutes: string | null
   final_minutes: string | null
@@ -104,11 +104,79 @@ export interface Meeting {
   creator?: Profile
 }
 
-export interface AgendaItem {
-  id: string
-  title: string
+// The pre-agenda_items jsonb blob shape — kept only for rendering old meetings.
+export interface LegacyAgendaItem {
+  id?: string
+  title?: string
+  item?: string
+  presenter?: string
   description?: string
   duration_minutes?: number
+}
+
+export type AgendaItemType = 'discussion' | 'approval_request' | 'acknowledgement'
+
+export type AgendaItemStatus =
+  | 'submitted'
+  | 'approved'
+  | 'edited_approved'
+  | 'deferred'
+  | 'rejected'
+  | 'pending'
+  | 'noted'
+
+export interface AgendaItem {
+  id: string
+  type: AgendaItemType
+  current_meeting_id: string | null
+  submitted_by: string | null
+  title: string
+  description: string | null
+  status: AgendaItemStatus
+  resolution_id: string | null
+  display_order: number
+  created_at: string
+  updated_at: string
+  submitter?: Profile
+  resolution?: Resolution
+}
+
+export interface AgendaItemQueueHistory {
+  id: string
+  agenda_item_id: string
+  from_meeting_id: string | null
+  to_meeting_id: string | null
+  changed_at: string
+  reason: 'initial_submission' | 'deferred' | 'rolled_forward' | 'manually_assigned'
+}
+
+export type ResolutionPassMode = 'unanimous' | 'threshold'
+
+export type ResolutionStatus = 'draft' | 'circulated' | 'passed' | 'failed' | 'noted'
+
+export interface Resolution {
+  id: string
+  approval_item_id: string
+  title: string
+  content: string
+  pass_mode: ResolutionPassMode
+  required_threshold: number | null
+  threshold_reference: string | null
+  eligible_voter_count: number | null
+  status: ResolutionStatus
+  created_by: string
+  circulated_at: string | null
+  passed_at: string | null
+  vote_result: string | null
+  queued_for_meeting_id: string | null
+  ratified_at_meeting_id: string | null
+  document_link: string | null
+  resolution_requested_by: string | null
+  resolution_requested_at: string | null
+  created_at: string
+  updated_at: string
+  creator?: Profile
+  approval_item?: ApprovalItem
 }
 
 export interface ActionItem {

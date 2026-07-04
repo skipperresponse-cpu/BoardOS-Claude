@@ -106,3 +106,13 @@ export function canManageUsers(role: string | null | undefined): boolean {
 export function canUseAI(role: string | null | undefined): boolean {
   return tierOf(role) !== 'viewer' && tierOf(role) !== null
 }
+
+/**
+ * Flag an approved decision for formalisation as a resolution. A narrow,
+ * specific permission — NOT a tier — since treasurer (board tier) and
+ * administrator (administrator tier) both get this one elevated action
+ * while keeping their tiers unchanged everywhere else.
+ */
+export function canFlagForResolution(role: string | null | undefined): boolean {
+  return role === 'president' || role === 'secretary' || role === 'treasurer' || role === 'administrator'
+}

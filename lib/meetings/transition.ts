@@ -47,6 +47,108 @@ export async function applyMeetingTransition(
   if (actorProfileId) {
     await logAudit(actorProfileId, 'meeting_status_changed', 'meeting', meetingId, { to: toStatus })
   }
+
+  // Minutes finalised: every acknowledgement item still attached to this
+  // meeting is now noted, and its resolution is permanently ratified here.
+  // Runs before the roll-forward check below so nothing attached at this
+  // point gets rolled forward instead of noted.
+  if (toStatus === 'minutes_approved') {
+    await noteAcknowledgements(meetingId)
+  }
+
+  // Roll-forward check: only meaningful at 'cancelled' (this meeting will
+  // never produce minutes, so anything still attached must move on) and at
+  // 'minutes_approved' (a defensive safety net — under normal operation the
+  // minutes-finalisation flow marks every attached acknowledgement 'noted' in
+  // the same step, so this is a no-op then, but guards any item that ended up
+  // attached to an already-finalised meeting through some other path).
+  // Deliberately NOT checked at 'held': that fires before minutes are ever
+  // drafted, so every attached acknowledgement would still be unnoted at that
+  // instant — checking there would roll everything forward immediately and
+  // defeat the entire mechanism, rather than actually being "the meeting
+  // didn't get to it."
+  if (toStatus === 'cancelled' || toStatus === 'minutes_approved') {
+    await rollForwardUnnotedAcknowledgements(meetingId)
+  }
+}
+
+/**
+ * Marks every acknowledgement-type agenda_item attached to this meeting as
+ * 'noted' and permanently ratifies its linked resolution against this
+ * meeting. Called when minutes are finalised (minutes_drafted -> minutes_approved).
+ */
+async function noteAcknowledgements(meetingId: string) {
+  const serviceSupabase = await createServiceClient()
+
+  const { data: items } = await serviceSupabase
+    .from('agenda_items')
+    .select('id, resolution_id')
+    .eq('current_meeting_id', meetingId)
+    .eq('type', 'acknowledgement')
+    .neq('status', 'noted')
+
+  if (!items || items.length === 0) return
+
+  for (const item of items) {
+    await serviceSupabase.from('agenda_items').update({ status: 'noted' }).eq('id', item.id)
+    if (item.resolution_id) {
+      await serviceSupabase
+        .from('resolutions')
+        .update({ ratified_at_meeting_id: meetingId, status: 'noted' })
+        .eq('id', item.resolution_id)
+    }
+  }
+}
+
+/**
+ * Finds acknowledgement-type agenda_items still attached to this meeting that
+ * were never marked 'noted', detaches them, records the move in
+ * agenda_item_queue_history, and re-queues each exactly like initial queuing
+ * (attach to the next draft/agenda_open meeting, or leave unassigned for the
+ * Outstanding Agenda depository).
+ */
+async function rollForwardUnnotedAcknowledgements(meetingId: string) {
+  const serviceSupabase = await createServiceClient()
+
+  const { data: items } = await serviceSupabase
+    .from('agenda_items')
+    .select('id, resolution_id')
+    .eq('current_meeting_id', meetingId)
+    .eq('type', 'acknowledgement')
+    .neq('status', 'noted')
+
+  if (!items || items.length === 0) return
+
+  const { data: nextMeeting } = await serviceSupabase
+    .from('meetings')
+    .select('id')
+    .in('status', ['draft', 'agenda_open'])
+    .order('meeting_date', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  const nextMeetingId = nextMeeting?.id ?? null
+
+  for (const item of items) {
+    await serviceSupabase
+      .from('agenda_items')
+      .update({ current_meeting_id: nextMeetingId })
+      .eq('id', item.id)
+
+    await serviceSupabase.from('agenda_item_queue_history').insert({
+      agenda_item_id: item.id,
+      from_meeting_id: meetingId,
+      to_meeting_id: nextMeetingId,
+      reason: 'rolled_forward',
+    })
+
+    if (item.resolution_id) {
+      await serviceSupabase
+        .from('resolutions')
+        .update({ queued_for_meeting_id: nextMeetingId })
+        .eq('id', item.resolution_id)
+    }
+  }
 }
 
 /**
