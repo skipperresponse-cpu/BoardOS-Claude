@@ -153,6 +153,11 @@ async function rollForwardUnnotedAcknowledgements(meetingId: string) {
       reason: 'rolled_forward',
     })
 
+    // Any pre-read attached to this item follows it — its meeting_id
+    // traceability snapshot must move too, not stay pinned to the meeting
+    // that never got to it.
+    await serviceSupabase.from('documents').update({ meeting_id: nextMeetingId }).eq('agenda_item_id', item.id)
+
     if (item.resolution_id) {
       await serviceSupabase
         .from('resolutions')

@@ -60,6 +60,10 @@ export async function POST(
       reason: 'manually_assigned',
     })
 
+    // Pre-read attachments are tagged with the item's CURRENT meeting for
+    // traceability — keep that snapshot in sync whenever the item moves.
+    await serviceSupabase.from('documents').update({ meeting_id: assignToMeetingId }).eq('agenda_item_id', id)
+
     if (item.type === 'acknowledgement') {
       const { data: ackItem } = await serviceSupabase.from('agenda_items').select('resolution_id').eq('id', id).single()
       if (ackItem?.resolution_id) {
@@ -119,6 +123,7 @@ export async function POST(
         to_meeting_id: toMeetingId,
         reason: 'deferred',
       })
+      await serviceSupabase.from('documents').update({ meeting_id: toMeetingId }).eq('agenda_item_id', id)
       break
     }
     default:

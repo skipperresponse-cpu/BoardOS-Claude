@@ -73,6 +73,11 @@ export interface Document {
   status: DocumentStatus
   created_at: string
   updated_at: string
+  // Set only for pre-read attachments — agenda_item_id is the durable link
+  // (survives defer/roll-forward); meeting_id is a kept-in-sync snapshot of
+  // the item's current meeting, not the meeting it was originally uploaded to.
+  agenda_item_id: string | null
+  meeting_id: string | null
   uploader?: { full_name: string; email?: string } | null
   folder?: { id: string; name: string } | null
 }
@@ -139,6 +144,7 @@ export interface AgendaItem {
   updated_at: string
   submitter?: Profile
   resolution?: Resolution
+  attachments?: Document[]
 }
 
 export interface AgendaItemQueueHistory {

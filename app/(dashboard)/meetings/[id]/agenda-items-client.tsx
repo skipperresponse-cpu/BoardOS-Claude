@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { canSubmitAgendaItems, isAdminEquivalent } from '@/lib/roles'
-import type { AgendaItem, MeetingStatus, UserRole } from '@/types'
-import { Plus, Check, Pencil, Clock, X } from 'lucide-react'
+import type { AgendaItem, Document, MeetingStatus, UserRole } from '@/types'
+import { Plus, Check, Pencil, Clock, X, Paperclip, Download, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   meetingStatus: MeetingStatus
   items: AgendaItem[]
   userRole: UserRole
+  currentProfileId: string
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -28,14 +30,88 @@ const STATUS_COLORS: Record<string, string> = {
   noted: 'bg-green-100 text-green-700',
 }
 
-export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItems, userRole }: Props) {
+const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md']
+
+function AttachmentsSection({
+  item, canManage, onAttach, onRemove, uploading,
+}: {
+  item: AgendaItem
+  canManage: boolean
+  onAttach: (item: AgendaItem, file: File) => void
+  onRemove: (item: AgendaItem, doc: Document) => void
+  uploading: boolean
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const attachments = item.attachments ?? []
+
+  if (attachments.length === 0 && !canManage) return null
+
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100">
+      {attachments.length > 0 && (
+        <ul className="space-y-1 mb-1.5">
+          {attachments.map((doc) => (
+            <li key={doc.id} className="flex items-center gap-1.5 text-xs">
+              <Paperclip className="h-3 w-3 text-slate-400 flex-shrink-0" />
+              <a
+                href={`/api/documents/${doc.id}/download`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-600 hover:text-slate-900 hover:underline truncate flex items-center gap-1"
+              >
+                {doc.title}
+                <Download className="h-3 w-3 flex-shrink-0" />
+              </a>
+              {canManage && (
+                <button
+                  onClick={() => onRemove(item, doc)}
+                  className="text-slate-300 hover:text-red-500 flex-shrink-0"
+                  title="Remove pre-read"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canManage && (
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ALLOWED_EXTENSIONS.join(',')}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) onAttach(item, file)
+              e.target.value = ''
+            }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 disabled:opacity-50"
+          >
+            <Paperclip className="h-3 w-3" />
+            {uploading ? 'Uploading…' : 'Attach pre-read'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItems, userRole, currentProfileId }: Props) {
   const [items, setItems] = useState(initialItems)
   const [showSubmit, setShowSubmit] = useState(false)
   const [form, setForm] = useState({ title: '', description: '' })
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ title: '', description: '' })
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
   const router = useRouter()
+  const supabase = createClient()
 
   const canSubmit = canSubmitAgendaItems(userRole) && meetingStatus === 'agenda_open'
   const canReview = isAdminEquivalent(userRole) && ['agenda_locked', 'scheduled'].includes(meetingStatus)
@@ -72,6 +148,50 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
     } else {
       const data = await res.json().catch(() => ({}))
       alert(data.error ?? 'Action failed')
+    }
+  }
+
+  async function handleAttach(item: AgendaItem, file: File) {
+    const ext = '.' + (file.name.split('.').pop()?.toLowerCase() ?? '')
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      alert('Only PDF, DOCX, TXT, and MD files are supported.')
+      return
+    }
+    setUploadingId(item.id)
+    try {
+      const filePath = `documents/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      const { error: storageErr } = await supabase.storage
+        .from('governance-docs')
+        .upload(filePath, file, { upsert: false })
+      if (storageErr) throw storageErr
+
+      const title = file.name.replace(/\.[^/.]+$/, '')
+      const res = await fetch(`/api/agenda-items/${item.id}/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath, title }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to attach pre-read')
+      }
+      const doc = await res.json()
+      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, attachments: [...(i.attachments ?? []), doc] } : i))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to attach pre-read')
+    } finally {
+      setUploadingId(null)
+    }
+  }
+
+  async function handleRemoveAttachment(item: AgendaItem, doc: Document) {
+    if (!confirm(`Remove pre-read "${doc.title}"?`)) return
+    const res = await fetch(`/api/agenda-items/${item.id}/attachments?documentId=${doc.id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, attachments: (i.attachments ?? []).filter((d) => d.id !== doc.id) } : i))
+    } else {
+      const data = await res.json().catch(() => ({}))
+      alert(data.error ?? 'Failed to remove pre-read')
     }
   }
 
@@ -114,7 +234,9 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
         <p className="text-sm text-slate-400 italic">No agenda items yet.</p>
       ) : (
         <div className="space-y-2">
-          {reviewableItems.map((item) => (
+          {reviewableItems.map((item) => {
+            const canManageAttachment = isAdminEquivalent(userRole) || item.submitted_by === currentProfileId
+            return (
             <Card key={item.id} className="p-3">
               {editingId === item.id ? (
                 <div className="space-y-2">
@@ -155,8 +277,17 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
                   )}
                 </div>
               )}
+
+              <AttachmentsSection
+                item={item}
+                canManage={canManageAttachment}
+                onAttach={handleAttach}
+                onRemove={handleRemoveAttachment}
+                uploading={uploadingId === item.id}
+              />
             </Card>
-          ))}
+            )
+          })}
 
           {acknowledgementItems.map((item) => (
             <Card key={item.id} className="p-3 bg-slate-50">

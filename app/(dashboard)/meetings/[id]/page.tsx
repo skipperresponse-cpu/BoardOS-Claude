@@ -50,7 +50,7 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   const { data: agendaItems } = await supabase
     .from('agenda_items')
-    .select('*, submitter:profiles!submitted_by(full_name), resolution:resolutions(*)')
+    .select('*, submitter:profiles!submitted_by(full_name), resolution:resolutions(*), attachments:documents!agenda_item_id(*)')
     .eq('current_meeting_id', id)
     .order('display_order')
     .order('created_at')
@@ -77,6 +77,7 @@ export default async function MeetingDetailPage({ params }: Props) {
                   meetingStatus={meeting.status}
                   items={agendaItems ?? []}
                   userRole={profile?.role ?? 'viewer'}
+                  currentProfileId={profile?.id ?? ''}
                 />
               ) : (meeting.agenda_json as { id?: string; title?: string; item?: string }[])?.length > 0 ? (
                 <ol className="text-sm text-slate-800 space-y-1 list-decimal list-inside">

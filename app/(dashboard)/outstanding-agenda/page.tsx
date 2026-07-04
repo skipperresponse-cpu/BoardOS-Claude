@@ -19,7 +19,7 @@ export default async function OutstandingAgendaPage() {
 
   const { data: items } = await supabase
     .from('agenda_items')
-    .select('*, submitter:profiles!submitted_by(full_name), resolution:resolutions(*)')
+    .select('*, submitter:profiles!submitted_by(full_name), resolution:resolutions(*), attachments:documents!agenda_item_id(*)')
     .is('current_meeting_id', null)
     .order('created_at', { ascending: true })
 

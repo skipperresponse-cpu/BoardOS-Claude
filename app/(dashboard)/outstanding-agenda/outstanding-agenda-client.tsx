@@ -7,7 +7,7 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { formatDateTime } from '@/lib/utils'
 import type { AgendaItem, AgendaItemQueueHistory } from '@/types'
-import { ChevronDown, ChevronUp, Trash2, ArrowRightCircle } from 'lucide-react'
+import { ChevronDown, ChevronUp, Trash2, ArrowRightCircle, Paperclip, Download } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -86,6 +86,24 @@ function ItemRow({ item, meetings, isAcknowledgement }: {
             <Badge className={STATUS_COLORS[item.status] ?? ''}>{item.status.replace('_', ' ')}</Badge>
             {item.submitter && <span className="text-xs text-slate-400">by {item.submitter.full_name}</span>}
           </div>
+          {(item.attachments ?? []).length > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {item.attachments!.map((doc) => (
+                <li key={doc.id} className="flex items-center gap-1.5 text-xs">
+                  <Paperclip className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                  <a
+                    href={`/api/documents/${doc.id}/download`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-slate-600 hover:text-slate-900 hover:underline truncate flex items-center gap-1"
+                  >
+                    {doc.title}
+                    <Download className="h-3 w-3 flex-shrink-0" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <button onClick={toggleExpand} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
           {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
