@@ -14,7 +14,7 @@ import { canManageDocuments } from '@/lib/roles'
 import type { Document, DocumentCategory, DocumentFolder, UserRole } from '@/types'
 import {
   Upload, Search, FileText, X, LayoutList, LayoutGrid,
-  Download, Trash2, Folder, FolderOpen,
+  Download, Trash2, Folder, FolderOpen, Gavel,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -23,10 +23,17 @@ type SortKey = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'folder'
 type ViewMode = 'list' | 'grid'
 type DocWithFolder = Document & { folder?: { id: string; name: string } | null }
 type FolderWithCount = DocumentFolder & { document_count: number }
+type ResolutionSummary = { id: string; title: string; vote_result: string | null; passed_at: string | null; ratified_at_meeting_id: string | null }
+
+// Sentinel for the read-only "Resolutions" pseudo-folder — not a real
+// document_folders row, since finalised resolutions live in the resolutions
+// table (no uploaded file), not as documents rows.
+const RESOLUTIONS_FOLDER = '__resolutions__'
 
 interface Props {
   documents: DocWithFolder[]
   folders: FolderWithCount[]
+  resolutions: ResolutionSummary[]
   userRole: UserRole
 }
 
@@ -46,7 +53,7 @@ function fileTypeBadge(filePath: string): { label: string; cls: string } {
   return map[ext ?? ''] ?? { label: 'TXT', cls: 'bg-slate-100 text-slate-600' }
 }
 
-export function DocumentsClient({ documents: initialDocs, folders: initialFolders, userRole }: Props) {
+export function DocumentsClient({ documents: initialDocs, folders: initialFolders, resolutions, userRole }: Props) {
   const [documents, setDocuments] = useState<DocWithFolder[]>(initialDocs)
   const [folders, setFolders] = useState<FolderWithCount[]>(initialFolders)
   const [search, setSearch] = useState('')
@@ -105,6 +112,14 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
       }
     })
   }, [documents, activeFolder, search, sort])
+
+  const showingResolutions = activeFolder === RESOLUTIONS_FOLDER
+
+  const filteredResolutions = useMemo(() => {
+    if (!search.trim()) return resolutions
+    const q = search.toLowerCase()
+    return resolutions.filter(r => r.title.toLowerCase().includes(q))
+  }, [resolutions, search])
 
   function changeView(v: ViewMode) { setView(v); localStorage.setItem('boardos_docs_view', v) }
   function changeSort(s: SortKey) { setSort(s); localStorage.setItem('boardos_docs_sort', s) }
@@ -241,7 +256,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
   return (
     <div>
       {/* Upload button */}
-      {canManageDocuments(userRole) && (
+      {canManageDocuments(userRole) && !showingResolutions && (
         <div className="flex justify-end mb-4">
           <Button
             onClick={() => { setShowUpload(v => !v); if (showUpload) resetForm() }}
@@ -263,6 +278,14 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                 All Documents
               </span>
               <span className="text-xs text-slate-400">{documents.length}</span>
+            </button>
+
+            <button onClick={() => setActiveFolder(RESOLUTIONS_FOLDER)} className={folderBtnCls(RESOLUTIONS_FOLDER)}>
+              <span className="flex items-center gap-2">
+                <Gavel className="h-4 w-4 flex-shrink-0" />
+                Resolutions
+              </span>
+              <span className="text-xs text-slate-400">{resolutions.length}</span>
             </button>
 
             {systemFolders.length > 0 && (
@@ -341,6 +364,15 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
               )}
             >
               All ({documents.length})
+            </button>
+            <button
+              onClick={() => setActiveFolder(RESOLUTIONS_FOLDER)}
+              className={cn(
+                'flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                showingResolutions ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              )}
+            >
+              Resolutions ({resolutions.length})
             </button>
             {folders.map(f => (
               <button
@@ -487,7 +519,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <Input
-                placeholder="Search by name or folder…"
+                placeholder={showingResolutions ? 'Search resolutions…' : 'Search by name or folder…'}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 pr-8"
@@ -503,6 +535,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
               )}
             </div>
 
+            {!showingResolutions && (
             <Select
               value={sort}
               onChange={(e) => changeSort(e.target.value as SortKey)}
@@ -514,7 +547,9 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
               <option value="name_desc">File name (Z–A)</option>
               <option value="folder">Folder name</option>
             </Select>
+            )}
 
+            {!showingResolutions && (
             <div className="flex rounded-md border border-slate-200 overflow-hidden flex-shrink-0">
               <button
                 onClick={() => changeView('list')}
@@ -537,10 +572,55 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                 <LayoutGrid className="h-4 w-4" />
               </button>
             </div>
+            )}
           </div>
 
           {/* ── Results ── */}
-          {filtered.length === 0 ? (
+          {showingResolutions ? (
+            filteredResolutions.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <Gavel className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">
+                  {search ? 'No resolutions match your search.' : 'No finalised resolutions yet.'}
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-4 py-3 font-medium text-slate-500">Resolution</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Outcome</th>
+                      <th className="text-left px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Ratified</th>
+                      <th className="px-4 py-3 w-20"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredResolutions.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <Link href={`/resolutions/${r.id}`} className="font-medium text-slate-900 hover:text-slate-600">
+                            {r.title}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 hidden sm:table-cell text-xs">
+                          {r.vote_result ?? '—'}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 hidden md:table-cell text-xs">
+                          {r.passed_at ? formatDate(r.passed_at) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link href={`/resolutions/${r.id}`} className="text-xs font-medium text-slate-600 hover:text-slate-900">
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
               <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="text-sm">

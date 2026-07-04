@@ -12,6 +12,7 @@ export default async function DocumentsPage() {
     { data: documents },
     { data: folders },
     { data: docFolderIds },
+    { data: resolutions },
   ] = await Promise.all([
     supabase.from('profiles').select('id, role').eq('user_id', user!.id).single(),
     supabase
@@ -24,6 +25,13 @@ export default async function DocumentsPage() {
       .order('is_system', { ascending: false })
       .order('name', { ascending: true }),
     supabase.from('documents').select('folder_id'),
+    // Finalised (ratified) resolutions surface here as a read-only pseudo-folder —
+    // they live in the resolutions table, not as real documents/file uploads.
+    supabase
+      .from('resolutions')
+      .select('id, title, vote_result, passed_at, ratified_at_meeting_id')
+      .eq('status', 'noted')
+      .order('passed_at', { ascending: false }),
   ])
 
   const countMap: Record<string, number> = {}
@@ -42,6 +50,7 @@ export default async function DocumentsPage() {
       <DocumentsClient
         documents={documents ?? []}
         folders={foldersWithCounts}
+        resolutions={resolutions ?? []}
         userRole={profile?.role ?? 'viewer'}
       />
     </div>
