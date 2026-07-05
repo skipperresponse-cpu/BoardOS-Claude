@@ -55,8 +55,20 @@ export default async function MeetingDetailPage({ params }: Props) {
     .order('display_order')
     .order('created_at')
 
-  const usesNewAgenda = (agendaItems ?? []).length > 0
-  const acknowledgementItems = (agendaItems ?? []).filter((a) => a.type === 'acknowledgement')
+  // BUG FIX: this used to be `agendaItems.length > 0`, which meant the entire
+  // agenda-contribution UI (submit/edit/approve/defer/reject) never rendered
+  // for any meeting that hadn't yet received its first agenda item — an
+  // impossible starting condition for every meeting, since "no items yet" is
+  // the normal state the moment a meeting opens for submissions. That silently
+  // hid the agenda UI even for president/secretary with full rights (reported
+  // by Daniel on "Board Meeting 2": agenda_open status, zero agenda_items).
+  // A meeting is only "legacy" (show the old read-only agenda_json list) if
+  // it has old JSON agenda data AND has never received any new-system item —
+  // i.e. it predates the agenda_items feature and was never touched by it.
+  const agendaItemsList = agendaItems ?? []
+  const legacyAgenda = meeting.agenda_json as { id?: string; title?: string; item?: string }[] | null
+  const isLegacyAgendaOnly = agendaItemsList.length === 0 && (legacyAgenda?.length ?? 0) > 0
+  const acknowledgementItems = agendaItemsList.filter((a) => a.type === 'acknowledgement')
 
   return (
     <div>
@@ -71,22 +83,20 @@ export default async function MeetingDetailPage({ params }: Props) {
           <Card>
             <CardHeader><CardTitle>Agenda</CardTitle></CardHeader>
             <CardContent>
-              {usesNewAgenda ? (
-                <AgendaItemsClient
-                  meetingId={id}
-                  meetingStatus={meeting.status}
-                  items={agendaItems ?? []}
-                  userRole={profile?.role ?? 'viewer'}
-                  currentProfileId={profile?.id ?? ''}
-                />
-              ) : (meeting.agenda_json as { id?: string; title?: string; item?: string }[])?.length > 0 ? (
+              {isLegacyAgendaOnly ? (
                 <ol className="text-sm text-slate-800 space-y-1 list-decimal list-inside">
-                  {(meeting.agenda_json as { id?: string; title?: string; item?: string }[]).map((a, i) => (
+                  {legacyAgenda!.map((a, i) => (
                     <li key={a.id ?? i}>{a.title ?? a.item}</li>
                   ))}
                 </ol>
               ) : (
-                <p className="text-sm text-slate-400 italic">No agenda recorded.</p>
+                <AgendaItemsClient
+                  meetingId={id}
+                  meetingStatus={meeting.status}
+                  items={agendaItemsList}
+                  userRole={profile?.role ?? 'viewer'}
+                  currentProfileId={profile?.id ?? ''}
+                />
               )}
             </CardContent>
           </Card>
