@@ -57,6 +57,17 @@ export function canManageDocuments(role: string | null | undefined): boolean {
   return t === 'admin_equivalent' || t === 'administrator'
 }
 
+/**
+ * Move a document to a different folder. President/Secretary only —
+ * deliberately narrower than canManageDocuments, which also grants
+ * administrator upload/archive/delete rights. Recategorisation is a
+ * privileged action, not routine housekeeping, so administrator does not
+ * get it even though they otherwise manage documents.
+ */
+export function canRecategorizeDocuments(role: string | null | undefined): boolean {
+  return isAdminEquivalent(role)
+}
+
 /** Documents: read access (active docs). Everyone except advisor/viewer. */
 export function canReadDocuments(role: string | null | undefined): boolean {
   const t = tierOf(role)

@@ -236,19 +236,6 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
     }
   }
 
-  async function moveDocument(doc: DocWithFolder, folderId: string) {
-    if (folderId === doc.folder_id) return
-    const targetFolder = folders.find(f => f.id === folderId) ?? null
-    setDocuments(prev => prev.map(d =>
-      d.id === doc.id ? { ...d, folder_id: folderId, folder: targetFolder ? { id: targetFolder.id, name: targetFolder.name } : null } : d
-    ))
-    const { error } = await supabase.from('documents').update({ folder_id: folderId }).eq('id', doc.id)
-    if (error) {
-      alert('Failed to move document: ' + error.message)
-      router.refresh()
-    }
-  }
-
   async function handleDeleteFolder(folder: FolderWithCount) {
     if (!confirm(`Delete folder "${folder.name}"?`)) return
     const res = await fetch(`/api/folders/${folder.id}`, { method: 'DELETE' })
@@ -658,19 +645,10 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                         )}
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
-                        {canManageDocuments(userRole) ? (
-                          <Select
-                            value={doc.folder_id ?? ''}
-                            onChange={(e) => moveDocument(doc, e.target.value)}
-                            className="!h-8 !py-1 text-xs w-40"
-                          >
-                            {sortedFolders.map(f => (
-                              <option key={f.id} value={f.id}>{f.name}</option>
-                            ))}
-                          </Select>
-                        ) : (
-                          <Badge className="bg-blue-50 text-blue-700">{doc.folder?.name ?? '—'}</Badge>
-                        )}
+                        {/* Read-only everywhere in list/grid, for everyone —
+                            recategorising only happens from the document's
+                            own detail page (canRecategorizeDocuments there). */}
+                        <Badge className="bg-blue-50 text-blue-700">{doc.folder?.name ?? '—'}</Badge>
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell text-xs">
                         {(doc.uploader as { full_name: string } | null)?.full_name ?? '—'}
@@ -741,19 +719,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                       </p>
                     </Link>
                     <div className="space-y-1">
-                      {canManageDocuments(userRole) ? (
-                        <Select
-                          value={doc.folder_id ?? ''}
-                          onChange={(e) => moveDocument(doc, e.target.value)}
-                          className="!h-7 !py-0.5 text-xs"
-                        >
-                          {sortedFolders.map(f => (
-                            <option key={f.id} value={f.id}>{f.name}</option>
-                          ))}
-                        </Select>
-                      ) : (
-                        doc.folder && <Badge className="bg-blue-50 text-blue-700">{doc.folder.name}</Badge>
-                      )}
+                      {doc.folder && <Badge className="bg-blue-50 text-blue-700">{doc.folder.name}</Badge>}
                       <p className="text-[11px] text-slate-400">{formatDate(doc.created_at)}</p>
                     </div>
                   </Card>

@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { DocumentActions } from './document-actions'
-import { canManageDocuments } from '@/lib/roles'
-import { FileText, Calendar, User, Tag } from 'lucide-react'
+import { DocumentFolderControl } from './document-folder-control'
+import { canManageDocuments, canRecategorizeDocuments } from '@/lib/roles'
+import { FileText, Calendar, User, Tag, Folder } from 'lucide-react'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -28,16 +29,17 @@ export default async function DocumentDetailPage({ params }: Props) {
 
   const { data: doc } = await supabase
     .from('documents')
-    .select('*, uploader:profiles!uploaded_by(full_name, email)')
+    .select('*, uploader:profiles!uploaded_by(full_name, email), folder:document_folders!folder_id(id, name)')
     .eq('id', id)
     .single()
 
   if (!doc) notFound()
 
   const serviceSupabase = await createServiceClient()
-  const [{ data: urlData }, { count: chunkCount }] = await Promise.all([
+  const [{ data: urlData }, { count: chunkCount }, { data: folders }] = await Promise.all([
     serviceSupabase.storage.from('governance-docs').createSignedUrl(doc.file_path, 3600),
     serviceSupabase.from('document_chunks').select('id', { count: 'exact', head: true }).eq('document_id', id),
+    serviceSupabase.from('document_folders').select('id, name').order('name'),
   ])
 
   return (
@@ -65,6 +67,23 @@ export default async function DocumentDetailPage({ params }: Props) {
                     <Tag className="h-3.5 w-3.5" /> Category
                   </dt>
                   <dd><Badge className="bg-slate-100 text-slate-700">{doc.category}</Badge></dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
+                    <Folder className="h-3.5 w-3.5" /> Folder
+                  </dt>
+                  <dd>
+                    {canRecategorizeDocuments(profile?.role) ? (
+                      <DocumentFolderControl
+                        documentId={doc.id}
+                        currentFolderId={doc.folder_id}
+                        currentFolderName={(doc.folder as { name: string } | null)?.name ?? '—'}
+                        folders={folders ?? []}
+                      />
+                    ) : (
+                      <Badge className="bg-slate-100 text-slate-700">{(doc.folder as { name: string } | null)?.name ?? '—'}</Badge>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
