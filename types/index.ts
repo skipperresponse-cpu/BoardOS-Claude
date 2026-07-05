@@ -95,7 +95,7 @@ export interface Meeting {
   id: string
   title: string
   meeting_date: string
-  attendees_json: string[]
+  attendees_json: string[] // frozen legacy snapshot — new meetings use meeting_attendees/meeting_guests instead
   absentees_json: string[]
   agenda_json: LegacyAgendaItem[] // frozen read-only snapshot for meetings that predate agenda_items
   transcript_text: string | null
@@ -103,10 +103,68 @@ export interface Meeting {
   final_minutes: string | null
   status: MeetingStatus
   agenda_deadline: string | null
+  subcommittee_id: string | null
   created_by: string
   created_at: string
   updated_at: string
   creator?: Profile
+  subcommittee?: { id: string; name: string } | null
+}
+
+export interface Subcommittee {
+  id: string
+  name: string
+  term_start: string | null
+  term_end: string | null
+  chair_user_id: string | null
+  created_at: string
+  updated_at: string
+  chair?: { id: string; full_name: string } | null
+  members?: SubcommitteeMember[]
+}
+
+export interface SubcommitteeMember {
+  id: string
+  subcommittee_id: string
+  user_id: string | null
+  external_name: string | null
+  external_affiliation: string | null
+  external_email: string | null
+  created_at: string
+  profile?: { id: string; full_name: string; role: UserRole } | null
+}
+
+export interface MeetingDelegation {
+  id: string
+  meeting_id: string
+  delegated_to_user_id: string
+  granted_by_user_id: string | null
+  granted_at: string
+  expires_at: string
+  reminder_sent_at: string | null
+  created_at: string
+  delegated_to?: { id: string; full_name: string } | null
+  granted_by?: { id: string; full_name: string } | null
+}
+
+export interface MeetingAttendee {
+  id: string
+  meeting_id: string
+  user_id: string
+  invited: boolean
+  attended: boolean | null
+  created_at: string
+  profile?: { id: string; full_name: string; role: UserRole } | null
+}
+
+export interface MeetingGuest {
+  id: string
+  meeting_id: string
+  name: string
+  affiliation: string | null
+  email: string | null
+  attended: boolean | null
+  created_at: string
 }
 
 // The pre-agenda_items jsonb blob shape — kept only for rendering old meetings.

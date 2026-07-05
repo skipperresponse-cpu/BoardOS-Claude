@@ -14,15 +14,27 @@ export default async function MeetingsPage() {
     .eq('user_id', user.id)
     .single()
 
-  const { data: meetings } = await supabase
-    .from('meetings')
-    .select('*, creator:profiles!created_by(full_name)')
-    .order('meeting_date', { ascending: false })
+  const [{ data: meetings }, { data: profiles }, { data: subcommittees }] = await Promise.all([
+    supabase
+      .from('meetings')
+      .select('*, creator:profiles!created_by(full_name), subcommittee:subcommittees!subcommittee_id(id, name)')
+      .order('meeting_date', { ascending: false }),
+    supabase.from('profiles').select('id, full_name, role').order('full_name'),
+    supabase
+      .from('subcommittees')
+      .select('*, members:subcommittee_members(*, profile:profiles!user_id(id, full_name, role))')
+      .order('name'),
+  ])
 
   return (
     <div>
       <Header title="Meetings" description="Board meeting records and minutes." />
-      <MeetingsClient meetings={meetings ?? []} userRole={profile?.role ?? 'viewer'} />
+      <MeetingsClient
+        meetings={meetings ?? []}
+        profiles={profiles ?? []}
+        subcommittees={subcommittees ?? []}
+        userRole={profile?.role ?? 'viewer'}
+      />
     </div>
   )
 }

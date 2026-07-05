@@ -4,6 +4,7 @@ import { getResendClient, EMAIL_FROM } from './resend'
 // Configurable, not hardcoded — matches the AI_CONFIG env-var-with-default pattern.
 export const AGENDA_REMINDER_DAYS_BEFORE = Number(process.env.AGENDA_REMINDER_DAYS_BEFORE ?? 3)
 export const MEETING_REMINDER_DAYS_BEFORE = Number(process.env.MEETING_REMINDER_DAYS_BEFORE ?? 3)
+export const DELEGATION_REMINDER_DAYS_BEFORE = Number(process.env.DELEGATION_REMINDER_DAYS_BEFORE ?? 2)
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
@@ -131,6 +132,35 @@ export async function sendUpcomingMeetingReminder(meeting: { id: string; title: 
     )
   )
   await markReminderSent(meeting.id, 'meeting', 'upcoming_meeting')
+}
+
+/**
+ * Ad hoc delegated meeting rights are expiring soon. Called by the daily cron
+ * scan (see /api/cron/meeting-reminders). Uses meeting_delegations'
+ * reminder_sent_at directly rather than the audit_logs dedup pattern, since
+ * each delegation row is already a natural, unique place to record it.
+ */
+export async function sendDelegationExpiringReminder(delegation: {
+  id: string
+  meetingId: string
+  meetingTitle: string
+  expiresAt: string
+  delegatedToEmail: string | null
+  grantedByEmail: string | null
+}) {
+  const recipients = [delegation.delegatedToEmail, delegation.grantedByEmail].filter((e): e is string => !!e)
+  await sendEmail(
+    recipients,
+    `Delegated meeting rights expiring soon: ${delegation.meetingTitle}`,
+    emailShell(
+      'Delegated meeting rights expiring soon',
+      `<p>Temporary meeting-management rights for <strong>${delegation.meetingTitle}</strong> expire ${new Date(delegation.expiresAt).toLocaleString('en-SG', { dateStyle: 'medium', timeStyle: 'short' })}. If the meeting isn't finished, ask President or Secretary for an extension or handoff.</p>`,
+      `/meetings/${delegation.meetingId}`,
+      'View meeting'
+    )
+  )
+  const supabase = await createServiceClient()
+  await supabase.from('meeting_delegations').update({ reminder_sent_at: new Date().toISOString() }).eq('id', delegation.id)
 }
 
 /** Resolution circulated for signature. Event-triggered (called from the circulate route). */

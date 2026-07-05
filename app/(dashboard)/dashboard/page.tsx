@@ -111,6 +111,35 @@ export default async function DashboardPage() {
     supabase.from('meetings').select('id, title, meeting_date, attendees_json').gte('meeting_date', yearStart).lt('meeting_date', now).order('meeting_date', { ascending: false }).limit(12),
   ])
 
+  // meeting_attendees rows for every meeting on this page (upcoming + past) —
+  // used in preference to the frozen attendees_json snapshot; meetings that
+  // predate this feature have zero rows here and fall back to attendees_json.
+  const allMeetingIds = [...(upcomingMeetings ?? []), ...(pastMeetings ?? [])].map((m) => m.id)
+  const { data: attendeeRows } = allMeetingIds.length > 0
+    ? await supabase.from('meeting_attendees').select('meeting_id, invited, attended').in('meeting_id', allMeetingIds)
+    : { data: [] as Array<{ meeting_id: string; invited: boolean; attended: boolean | null }> }
+
+  const invitedCountByMeeting = new Map<string, number>()
+  const attendedCountByMeeting = new Map<string, number>()
+  for (const row of attendeeRows ?? []) {
+    if (row.invited) invitedCountByMeeting.set(row.meeting_id, (invitedCountByMeeting.get(row.meeting_id) ?? 0) + 1)
+    if (row.attended) attendedCountByMeeting.set(row.meeting_id, (attendedCountByMeeting.get(row.meeting_id) ?? 0) + 1)
+  }
+
+  function invitedCount(meeting: { id: string; attendees_json: unknown }): number {
+    const fromNewTable = invitedCountByMeeting.get(meeting.id)
+    if (fromNewTable !== undefined) return fromNewTable
+    return Array.isArray(meeting.attendees_json) ? meeting.attendees_json.length : 0
+  }
+
+  function attendedCount(meeting: { id: string; attendees_json: unknown }): number {
+    // Legacy attendees_json historically meant "who was present" (populated
+    // post-meeting), so it's the right fallback for actual attendance too —
+    // but only when this meeting has no meeting_attendees rows at all.
+    if (invitedCountByMeeting.has(meeting.id)) return attendedCountByMeeting.get(meeting.id) ?? 0
+    return Array.isArray(meeting.attendees_json) ? meeting.attendees_json.length : 0
+  }
+
   // ── Compute stats ──────────────────────────────────────────────────────────
   const totalBoardMembers = boardMembers?.length ?? 6
 
@@ -134,7 +163,7 @@ export default async function DashboardPage() {
   // Attendance: avg across past meetings
   const avgAttendance = pastMeetings?.length
     ? Math.round(pastMeetings.reduce((sum, m) => {
-        const count = Array.isArray(m.attendees_json) ? m.attendees_json.length : 0
+        const count = attendedCount(m)
         return sum + (totalBoardMembers > 0 ? (count / totalBoardMembers) * 100 : 0)
       }, 0) / pastMeetings.length)
     : 0
@@ -148,7 +177,7 @@ export default async function DashboardPage() {
       const meetingsInMonth = (pastMeetings ?? []).filter(m => new Date(m.meeting_date).getMonth() === idx)
       if (meetingsInMonth.length === 0) return { label, pct: 0, future: false, noMeeting: true }
       const avg = meetingsInMonth.reduce((sum, m) => {
-        const cnt = Array.isArray(m.attendees_json) ? m.attendees_json.length : 0
+        const cnt = attendedCount(m)
         return sum + (totalBoardMembers > 0 ? (cnt / totalBoardMembers) * 100 : 0)
       }, 0) / meetingsInMonth.length
       return { label, pct: Math.round(avg), future: false }
@@ -357,7 +386,7 @@ export default async function DashboardPage() {
                 const dayNum = format(date, 'd')
                 const month = format(date, 'MMM').toUpperCase()
                 const time = format(date, 'h:mm a')
-                const attendeeCount = Array.isArray(m.attendees_json) ? m.attendees_json.length : 0
+                const attendeeCount = invitedCount(m)
                 const isFirst = idx === 0
                 return (
                   <Link key={m.id} href={`/meetings/${m.id}`}

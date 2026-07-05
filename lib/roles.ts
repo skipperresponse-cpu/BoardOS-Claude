@@ -127,3 +127,21 @@ export function canUseAI(role: string | null | undefined): boolean {
 export function canFlagForResolution(role: string | null | undefined): boolean {
   return role === 'president' || role === 'secretary' || role === 'treasurer' || role === 'administrator'
 }
+
+/**
+ * Manage subcommittee structure — create a subcommittee, set its roster,
+ * assign/change its chair. President/Secretary only, deliberately narrower
+ * than canManageMeetings (administrator does not get this).
+ */
+export function canManageSubcommittees(role: string | null | undefined): boolean {
+  return isAdminEquivalent(role)
+}
+
+/**
+ * Grant ad hoc delegated meeting-management rights for a specific meeting.
+ * President/Secretary only — same tier as canManageSubcommittees, kept as
+ * its own named function since it's a conceptually distinct action.
+ */
+export function canDelegateMeetingRights(role: string | null | undefined): boolean {
+  return isAdminEquivalent(role)
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { canManageMeetings, isAdminEquivalent } from '@/lib/roles'
+import { isAdminEquivalent } from '@/lib/roles'
+import { canManageThisMeeting } from '@/lib/meetings/permissions'
 import {
   isValidForwardTransition, isManualReopenTransition, canCancelFrom, applyMeetingTransition,
 } from '@/lib/meetings/transition'
@@ -20,7 +21,9 @@ export async function POST(
     .eq('user_id', user.id)
     .single()
 
-  if (!profile || !canManageMeetings(profile.role)) {
+  // Blanket role tier OR standing subcommittee-chair right OR an active ad
+  // hoc delegation for this specific meeting — see lib/meetings/permissions.ts.
+  if (!profile || !(await canManageThisMeeting(profile.id, profile.role, id))) {
     return NextResponse.json({ error: 'Meeting management access required' }, { status: 403 })
   }
 

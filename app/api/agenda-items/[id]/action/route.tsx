@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isAdminEquivalent } from '@/lib/roles'
+import { canManageThisMeeting } from '@/lib/meetings/permissions'
 import { logAudit } from '@/lib/audit'
 
 export async function POST(
@@ -18,9 +19,7 @@ export async function POST(
     .eq('user_id', user.id)
     .single()
 
-  if (!profile || !isAdminEquivalent(profile.role)) {
-    return NextResponse.json({ error: 'President/Secretary access required' }, { status: 403 })
-  }
+  if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
   const { action, editedTitle, editedDescription, deferToMeetingId, assignToMeetingId } = await request.json()
   if (!action) return NextResponse.json({ error: 'action is required' }, { status: 400 })
@@ -35,6 +34,17 @@ export async function POST(
 
   if (!item) return NextResponse.json({ error: 'Agenda item not found' }, { status: 404 })
 
+  // Access for a given meeting: the blanket role tier (president/secretary/
+  // administrator), OR — for an item actually attached to a meeting — that
+  // meeting's standing subcommittee chair or an active ad hoc delegate.
+  // Unassigned depository items (meetingId null) have no meeting-specific
+  // context to check against, so only the blanket tier can act on them.
+  async function hasAccess(meetingId: string | null): Promise<boolean> {
+    if (isAdminEquivalent(profile!.role)) return true
+    if (!meetingId) return false
+    return canManageThisMeeting(profile!.id, profile!.role, meetingId)
+  }
+
   // 'assign' (pulling an unassigned depository item into the meeting currently
   // being built) has its own rules and doesn't go through the review-window
   // check below — handle it first and return early.
@@ -42,6 +52,9 @@ export async function POST(
     if (!assignToMeetingId) return NextResponse.json({ error: 'assignToMeetingId is required' }, { status: 400 })
     if (item.current_meeting_id !== null) {
       return NextResponse.json({ error: 'Item is already attached to a meeting' }, { status: 400 })
+    }
+    if (!(await hasAccess(assignToMeetingId))) {
+      return NextResponse.json({ error: 'President/Secretary or this meeting\'s manager access required' }, { status: 403 })
     }
 
     const { data: updated, error } = await serviceSupabase
@@ -77,6 +90,10 @@ export async function POST(
 
   if (item.type !== 'discussion' && item.type !== 'approval_request') {
     return NextResponse.json({ error: 'Acknowledgement items cannot be reviewed' }, { status: 400 })
+  }
+
+  if (!(await hasAccess(item.current_meeting_id))) {
+    return NextResponse.json({ error: 'President/Secretary or this meeting\'s manager access required' }, { status: 403 })
   }
 
   // Defense in depth alongside RLS: an item currently attached to a meeting

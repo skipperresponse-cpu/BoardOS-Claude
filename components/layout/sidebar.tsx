@@ -17,11 +17,12 @@ import {
   X,
   Gavel,
   ListTodo,
+  Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { canManageUsers, isAdminEquivalent, ROLE_LABELS } from '@/lib/roles'
+import { canManageUsers, canReadMeetings, isAdminEquivalent, ROLE_LABELS } from '@/lib/roles'
 import type { UserRole } from '@/types'
 
 const navItems = [
@@ -89,6 +90,22 @@ function NavContent({
             </Link>
           )
         })}
+
+        {canReadMeetings(userRole) && (
+          <Link
+            href="/subcommittees"
+            onClick={onNavClick}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
+              pathname.startsWith('/subcommittees')
+                ? 'bg-slate-700 text-white'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            )}
+          >
+            <Users className="h-4 w-4 flex-shrink-0" />
+            Subcommittees
+          </Link>
+        )}
 
         {isAdminEquivalent(userRole) && (
           <Link

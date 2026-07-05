@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ACTION_STATUS_COLORS, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS, formatDate, formatDateTime, cn } from '@/lib/utils'
-import { canManageMeetings, isAdminEquivalent } from '@/lib/roles'
+import { isAdminEquivalent } from '@/lib/roles'
 import type { Meeting, ActionItem, ActionItemStatus, UserRole, AgendaItem } from '@/types'
 import { Sparkles, Save, Plus, CheckSquare, ArrowRight, Undo2, Ban } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -22,6 +22,14 @@ interface Props {
   userRole: UserRole
   currentProfileId: string
   acknowledgementItems: AgendaItem[]
+  // Blanket role tier OR standing subcommittee chair OR an active ad hoc
+  // delegation for THIS meeting — computed server-side, see page.tsx.
+  canManageThisMeeting: boolean
+  // Resolved attendee/guest names for the AI minutes prompt — prefers
+  // confirmed meeting_attendees/meeting_guests over the legacy attendees_json
+  // snapshot; computed server-side in page.tsx.
+  attendeeNames: string[]
+  absentNames: string[]
 }
 
 function AcknowledgementBlock({ items }: { items: AgendaItem[] }) {
@@ -52,7 +60,7 @@ function AcknowledgementBlock({ items }: { items: AgendaItem[] }) {
   )
 }
 
-export function MeetingDetailClient({ meeting, actionItems: initialItems, profiles, userRole, currentProfileId, acknowledgementItems }: Props) {
+export function MeetingDetailClient({ meeting, actionItems: initialItems, profiles, userRole, currentProfileId, acknowledgementItems, canManageThisMeeting, attendeeNames, absentNames }: Props) {
   const [activeTab, setActiveTab] = useState<'transcript' | 'minutes' | 'actions'>('minutes')
   const [transcript, setTranscript] = useState(meeting.transcript_text ?? '')
   const [draftMinutes, setDraftMinutes] = useState(meeting.draft_minutes ?? '')
@@ -68,7 +76,7 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
   const supabase = createClient()
 
   const [transitioning, setTransitioning] = useState(false)
-  const isAdmin = canManageMeetings(userRole)
+  const isAdmin = canManageThisMeeting
   const isHeldOrLater = ['held', 'minutes_drafted', 'minutes_approved'].includes(meeting.status)
   const canCancel = meeting.status !== 'cancelled' && meeting.status !== 'minutes_approved'
 
@@ -102,8 +110,8 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
         meetingDetails: {
           title: meeting.title,
           date: meeting.meeting_date,
-          attendees: meeting.attendees_json ?? [],
-          absentees: meeting.absentees_json ?? [],
+          attendees: attendeeNames,
+          absentees: absentNames,
         },
       }),
     })

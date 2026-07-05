@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { canSubmitAgendaItems, isAdminEquivalent } from '@/lib/roles'
+import { canSubmitAgendaItems } from '@/lib/roles'
 import type { AgendaItem, Document, MeetingStatus, UserRole } from '@/types'
 import { Plus, Check, Pencil, Clock, X, Paperclip, Download, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -18,6 +18,10 @@ interface Props {
   items: AgendaItem[]
   userRole: UserRole
   currentProfileId: string
+  // Blanket role tier OR standing subcommittee chair OR an active ad hoc
+  // delegation for THIS meeting — computed server-side (lib/meetings/permissions.ts)
+  // since it needs a DB round-trip the client can't do on its own.
+  canManageThisMeeting: boolean
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -102,7 +106,7 @@ function AttachmentsSection({
   )
 }
 
-export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItems, userRole, currentProfileId }: Props) {
+export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItems, userRole, currentProfileId, canManageThisMeeting }: Props) {
   const [items, setItems] = useState(initialItems)
   const [showSubmit, setShowSubmit] = useState(false)
   const [form, setForm] = useState({ title: '', description: '' })
@@ -114,7 +118,7 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
   const supabase = createClient()
 
   const canSubmit = canSubmitAgendaItems(userRole) && meetingStatus === 'agenda_open'
-  const canReview = isAdminEquivalent(userRole) && ['agenda_locked', 'scheduled'].includes(meetingStatus)
+  const canReview = canManageThisMeeting && ['agenda_locked', 'scheduled'].includes(meetingStatus)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -235,7 +239,7 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
       ) : (
         <div className="space-y-2">
           {reviewableItems.map((item) => {
-            const canManageAttachment = isAdminEquivalent(userRole) || item.submitted_by === currentProfileId
+            const canManageAttachment = canManageThisMeeting || item.submitted_by === currentProfileId
             return (
             <Card key={item.id} className="p-3">
               {editingId === item.id ? (

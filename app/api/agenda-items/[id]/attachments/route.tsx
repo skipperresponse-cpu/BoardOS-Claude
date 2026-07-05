@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isAdminEquivalent } from '@/lib/roles'
+import { canManageThisMeeting } from '@/lib/meetings/permissions'
 import { logAudit } from '@/lib/audit'
 
 // Pre-reads are just regular `documents` rows tagged with agenda_item_id —
@@ -9,6 +10,10 @@ import { logAudit } from '@/lib/audit'
 // advisor) isn't canManageDocuments and would fail the documents RLS policy
 // via a direct client-side insert. Permission is checked here instead,
 // mirroring the resolutions creation route's service-role pattern.
+//
+// Extended to also allow this meeting's standing subcommittee chair or an
+// active ad hoc delegate, matching their broader "manage this meeting"
+// rights — not just the blanket president/secretary tier.
 async function canManageAttachment(
   serviceSupabase: Awaited<ReturnType<typeof createServiceClient>>,
   agendaItemId: string,
@@ -18,10 +23,12 @@ async function canManageAttachment(
   if (isAdminEquivalent(role)) return true
   const { data: item } = await serviceSupabase
     .from('agenda_items')
-    .select('submitted_by')
+    .select('submitted_by, current_meeting_id')
     .eq('id', agendaItemId)
     .single()
-  return item?.submitted_by === profileId
+  if (item?.submitted_by === profileId) return true
+  if (item?.current_meeting_id) return canManageThisMeeting(profileId, role, item.current_meeting_id)
+  return false
 }
 
 export async function POST(
@@ -51,8 +58,12 @@ export async function POST(
 
   if (!item) return NextResponse.json({ error: 'Agenda item not found' }, { status: 404 })
 
-  if (!(isAdminEquivalent(profile.role) || item.submitted_by === profile.id)) {
-    return NextResponse.json({ error: 'Only the submitter, President, or Secretary can attach pre-reads' }, { status: 403 })
+  const allowedToAttach = isAdminEquivalent(profile.role)
+    || item.submitted_by === profile.id
+    || (item.current_meeting_id ? await canManageThisMeeting(profile.id, profile.role, item.current_meeting_id) : false)
+
+  if (!allowedToAttach) {
+    return NextResponse.json({ error: 'Only the submitter, President, Secretary, or this meeting\'s manager can attach pre-reads' }, { status: 403 })
   }
 
   const { filePath, title } = await request.json()
