@@ -32,6 +32,14 @@ interface Props {
   absentNames: string[]
 }
 
+// IMPORTANT: must never join to documents or visibility_groups. Per the
+// visibility-groups brief (Task 3/4), a resolution's own record — what was
+// decided, the vote result, when it was ratified — is part of the official
+// board record and stays visible to anyone who can see these minutes,
+// regardless of whether some linked document (documents.resolution_id) is
+// restricted to a narrower visibility group. Only that document's own
+// destination is subject to its visibility group when someone clicks
+// through to it — never this acknowledgement entry itself.
 function AcknowledgementBlock({ items }: { items: AgendaItem[] }) {
   if (items.length === 0) return null
   return (

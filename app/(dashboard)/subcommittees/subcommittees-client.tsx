@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -233,20 +233,26 @@ function SubcommitteeCard({ sub, profiles, canManage }: {
 
 export function SubcommitteesClient({ subcommittees: initial, profiles, userRole }: Props) {
   const [subcommittees, setSubcommittees] = useState(initial)
+  // All mutations below (create, member add/remove, chair change) call
+  // router.refresh() rather than hand-rolling optimistic updates — this
+  // resets local state back to the freshly re-fetched server data (a plain
+  // useState(initial) only reads its initial value once and otherwise goes
+  // stale across refreshes). Confirmed live: without this, a newly-assigned
+  // chair silently showed as "None assigned" until a hard reload. Resetting
+  // during render (React's documented pattern for "adjusting state when a
+  // prop changes") avoids the extra render pass — and lint warning — that
+  // come with syncing state in a useEffect.
+  const [prevInitial, setPrevInitial] = useState(initial)
+  if (initial !== prevInitial) {
+    setPrevInitial(initial)
+    setSubcommittees(initial)
+  }
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', term_start: '', term_end: '', chair_user_id: '' })
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
   const canManage = canManageSubcommittees(userRole)
-
-  // All mutations below (create, member add/remove, chair change) call
-  // router.refresh() rather than hand-rolling optimistic updates — this
-  // syncs local state back to the freshly re-fetched server data (a plain
-  // useState(initial) only reads its initial value once and otherwise goes
-  // stale across refreshes). Confirmed live: without this, a newly-assigned
-  // chair silently showed as "None assigned" until a hard reload.
-  useEffect(() => setSubcommittees(initial), [initial])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()

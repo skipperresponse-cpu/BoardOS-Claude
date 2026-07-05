@@ -13,11 +13,12 @@ export default async function DocumentsPage() {
     { data: folders },
     { data: docFolderIds },
     { data: resolutions },
+    { data: visibilityGroups },
   ] = await Promise.all([
     supabase.from('profiles').select('id, role').eq('user_id', user!.id).single(),
     supabase
       .from('documents')
-      .select('*, uploader:profiles!uploaded_by(full_name), folder:document_folders!folder_id(id, name)')
+      .select('*, uploader:profiles!uploaded_by(full_name), folder:document_folders!folder_id(id, name), visibility_group:visibility_groups!visibility_group_id(id, name)')
       .order('created_at', { ascending: false }),
     supabase
       .from('document_folders')
@@ -32,6 +33,7 @@ export default async function DocumentsPage() {
       .select('id, title, vote_result, passed_at, ratified_at_meeting_id')
       .eq('status', 'noted')
       .order('passed_at', { ascending: false }),
+    supabase.from('visibility_groups').select('id, name, is_system').order('is_system', { ascending: false }).order('name'),
   ])
 
   const countMap: Record<string, number> = {}
@@ -51,6 +53,7 @@ export default async function DocumentsPage() {
         documents={documents ?? []}
         folders={foldersWithCounts}
         resolutions={resolutions ?? []}
+        visibilityGroups={visibilityGroups ?? []}
         userRole={profile?.role ?? 'viewer'}
       />
     </div>

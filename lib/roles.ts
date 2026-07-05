@@ -145,3 +145,13 @@ export function canManageSubcommittees(role: string | null | undefined): boolean
 export function canDelegateMeetingRights(role: string | null | undefined): boolean {
   return isAdminEquivalent(role)
 }
+
+/**
+ * Create a visibility group or edit its membership. President/Secretary
+ * only — deliberately narrower than canManageDocuments (administrator does
+ * not get this; it's a standing-access-control decision, not day-to-day
+ * document housekeeping).
+ */
+export function canManageVisibilityGroups(role: string | null | undefined): boolean {
+  return isAdminEquivalent(role)
+}

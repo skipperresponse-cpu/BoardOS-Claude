@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { DocumentActions } from './document-actions'
 import { DocumentFolderControl } from './document-folder-control'
-import { canManageDocuments, canRecategorizeDocuments } from '@/lib/roles'
-import { FileText, Calendar, User, Tag, Folder } from 'lucide-react'
+import { DocumentVisibilityControl } from './document-visibility-control'
+import { canManageDocuments, canRecategorizeDocuments, isAdminEquivalent } from '@/lib/roles'
+import { FileText, Calendar, User, Tag, Folder, Eye } from 'lucide-react'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -29,18 +30,21 @@ export default async function DocumentDetailPage({ params }: Props) {
 
   const { data: doc } = await supabase
     .from('documents')
-    .select('*, uploader:profiles!uploaded_by(full_name, email), folder:document_folders!folder_id(id, name)')
+    .select('*, uploader:profiles!uploaded_by(full_name, email), folder:document_folders!folder_id(id, name), visibility_group:visibility_groups!visibility_group_id(id, name)')
     .eq('id', id)
     .single()
 
   if (!doc) notFound()
 
   const serviceSupabase = await createServiceClient()
-  const [{ data: urlData }, { count: chunkCount }, { data: folders }] = await Promise.all([
+  const [{ data: urlData }, { count: chunkCount }, { data: folders }, { data: visibilityGroups }] = await Promise.all([
     serviceSupabase.storage.from('governance-docs').createSignedUrl(doc.file_path, 3600),
     serviceSupabase.from('document_chunks').select('id', { count: 'exact', head: true }).eq('document_id', id),
     serviceSupabase.from('document_folders').select('id, name').order('name'),
+    serviceSupabase.from('visibility_groups').select('id, name').order('is_system', { ascending: false }).order('name'),
   ])
+
+  const canSetVisibility = isAdminEquivalent(profile?.role) || doc.uploaded_by === profile?.id
 
   return (
     <div>
@@ -82,6 +86,23 @@ export default async function DocumentDetailPage({ params }: Props) {
                       />
                     ) : (
                       <Badge className="bg-slate-100 text-slate-700">{(doc.folder as { name: string } | null)?.name ?? '—'}</Badge>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1">
+                    <Eye className="h-3.5 w-3.5" /> Visibility
+                  </dt>
+                  <dd>
+                    {canSetVisibility ? (
+                      <DocumentVisibilityControl
+                        documentId={doc.id}
+                        currentGroupId={doc.visibility_group_id}
+                        currentGroupName={(doc.visibility_group as { name: string } | null)?.name ?? '—'}
+                        groups={visibilityGroups ?? []}
+                      />
+                    ) : (
+                      <Badge className="bg-amber-50 text-amber-700">{(doc.visibility_group as { name: string } | null)?.name ?? '—'}</Badge>
                     )}
                   </dd>
                 </div>

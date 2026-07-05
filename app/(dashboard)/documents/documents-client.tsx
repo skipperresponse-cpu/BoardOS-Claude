@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { DOCUMENT_CATEGORIES, formatDate, cn } from '@/lib/utils'
 import { canManageDocuments } from '@/lib/roles'
-import type { Document, DocumentCategory, DocumentFolder, UserRole } from '@/types'
+import type { Document, DocumentCategory, DocumentFolder, VisibilityGroup, UserRole } from '@/types'
 import {
   Upload, Search, FileText, X, LayoutList, LayoutGrid,
   Download, Trash2, Folder, FolderOpen, Gavel,
@@ -21,9 +21,10 @@ import Link from 'next/link'
 
 type SortKey = 'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'folder'
 type ViewMode = 'list' | 'grid'
-type DocWithFolder = Document & { folder?: { id: string; name: string } | null }
+type DocWithFolder = Document & { folder?: { id: string; name: string } | null; visibility_group?: { id: string; name: string } | null }
 type FolderWithCount = DocumentFolder & { document_count: number }
 type ResolutionSummary = { id: string; title: string; vote_result: string | null; passed_at: string | null; ratified_at_meeting_id: string | null }
+type VisibilityGroupOption = Pick<VisibilityGroup, 'id' | 'name' | 'is_system'>
 
 // Sentinel for the read-only "Resolutions" pseudo-folder — not a real
 // document_folders row, since finalised resolutions live in the resolutions
@@ -34,6 +35,7 @@ interface Props {
   documents: DocWithFolder[]
   folders: FolderWithCount[]
   resolutions: ResolutionSummary[]
+  visibilityGroups: VisibilityGroupOption[]
   userRole: UserRole
 }
 
@@ -53,7 +55,7 @@ function fileTypeBadge(filePath: string): { label: string; cls: string } {
   return map[ext ?? ''] ?? { label: 'TXT', cls: 'bg-slate-100 text-slate-600' }
 }
 
-export function DocumentsClient({ documents: initialDocs, folders: initialFolders, resolutions, userRole }: Props) {
+export function DocumentsClient({ documents: initialDocs, folders: initialFolders, resolutions, visibilityGroups, userRole }: Props) {
   const [documents, setDocuments] = useState<DocWithFolder[]>(initialDocs)
   const [folders, setFolders] = useState<FolderWithCount[]>(initialFolders)
   const [search, setSearch] = useState('')
@@ -66,13 +68,18 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null)
   const [showNewFolderInput, setShowNewFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const generalFolderId = initialFolders.find(f => f.name === 'General')?.id ?? ''
   const [form, setForm] = useState({
     title: '',
     category: 'Policy' as DocumentCategory,
     description: '',
     document_date: '',
-    folder_id: initialFolders.find(f => f.name === 'General')?.id ?? '',
+    folder_id: generalFolderId,
+    // Visibility follows the folder's default until the uploader explicitly
+    // changes it (Task 2 — per-document override).
+    visibility_group_id: initialFolders.find(f => f.id === generalFolderId)?.default_visibility_group_id ?? '',
   })
+  const [visibilityTouched, setVisibilityTouched] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -130,11 +137,25 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
     setForm({
       title: '', category: 'Policy', description: '', document_date: '',
       folder_id: generalFolder?.id ?? '',
+      visibility_group_id: generalFolder?.default_visibility_group_id ?? '',
     })
+    setVisibilityTouched(false)
     setShowNewFolderInput(false)
     setNewFolderName('')
     setUploadError('')
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  function selectFolder(folderId: string) {
+    const folder = folders.find(f => f.id === folderId)
+    setForm(prev => ({
+      ...prev,
+      folder_id: folderId,
+      // Only auto-follow the folder's default until the uploader deliberately
+      // overrides it — once touched, switching folders shouldn't clobber
+      // their explicit choice.
+      visibility_group_id: visibilityTouched ? prev.visibility_group_id : (folder?.default_visibility_group_id ?? prev.visibility_group_id),
+    }))
   }
 
   async function handleUpload(e: React.FormEvent) {
@@ -186,6 +207,9 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
         .upload(filePath, file, { upsert: false })
       if (storageErr) throw storageErr
 
+      const targetFolder = folders.find(f => f.id === folderId)
+      const visibilityGroupId = form.visibility_group_id || targetFolder?.default_visibility_group_id || null
+
       const { data: doc, error: insertErr } = await supabase
         .from('documents')
         .insert({
@@ -196,9 +220,10 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
           uploaded_by: profile?.id,
           document_date: form.document_date || null,
           folder_id: folderId,
+          visibility_group_id: visibilityGroupId,
           status: 'active',
         })
-        .select('*, uploader:profiles!uploaded_by(full_name), folder:document_folders!folder_id(id, name)')
+        .select('*, uploader:profiles!uploaded_by(full_name), folder:document_folders!folder_id(id, name), visibility_group:visibility_groups!visibility_group_id(id, name)')
         .single()
 
       if (insertErr) throw insertErr
@@ -405,7 +430,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                           setNewFolderName('')
                         } else {
                           setShowNewFolderInput(false)
-                          setForm({ ...form, folder_id: e.target.value })
+                          selectFolder(e.target.value)
                         }
                       }}
                     >
@@ -423,6 +448,22 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                         autoFocus
                       />
                     )}
+                  </div>
+
+                  <div>
+                    <Label htmlFor="doc-visibility">Visibility</Label>
+                    <Select
+                      id="doc-visibility"
+                      value={form.visibility_group_id}
+                      onChange={(e) => { setVisibilityTouched(true); setForm({ ...form, visibility_group_id: e.target.value }) }}
+                    >
+                      {visibilityGroups.map(g => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </Select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Defaults to the folder&apos;s usual visibility — change it if this specific document should be seen more widely or more narrowly.
+                    </p>
                   </div>
 
                   <div>
@@ -623,6 +664,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                   <tr className="bg-slate-50 border-b border-slate-200">
                     <th className="text-left px-4 py-3 font-medium text-slate-500">Document</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Folder</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">Visibility</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Uploaded by</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">Date</th>
                     <th className="px-4 py-3 w-20"></th>
@@ -649,6 +691,9 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                             recategorising only happens from the document's
                             own detail page (canRecategorizeDocuments there). */}
                         <Badge className="bg-blue-50 text-blue-700">{doc.folder?.name ?? '—'}</Badge>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <Badge className="bg-amber-50 text-amber-700">{doc.visibility_group?.name ?? '—'}</Badge>
                       </td>
                       <td className="px-4 py-3 text-slate-500 hidden md:table-cell text-xs">
                         {(doc.uploader as { full_name: string } | null)?.full_name ?? '—'}
@@ -720,6 +765,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
                     </Link>
                     <div className="space-y-1">
                       {doc.folder && <Badge className="bg-blue-50 text-blue-700">{doc.folder.name}</Badge>}
+                      {doc.visibility_group && <Badge className="bg-amber-50 text-amber-700">{doc.visibility_group.name}</Badge>}
                       <p className="text-[11px] text-slate-400">{formatDate(doc.created_at)}</p>
                     </div>
                   </Card>

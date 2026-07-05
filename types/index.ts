@@ -57,7 +57,23 @@ export interface DocumentFolder {
   is_system: boolean
   created_at: string
   created_by: string | null
+  default_visibility_group_id: string
   document_count?: number
+}
+
+export type VisibilityGroupMembershipType = 'role_based' | 'subcommittee' | 'static'
+
+export interface VisibilityGroup {
+  id: string
+  name: string
+  membership_type: VisibilityGroupMembershipType
+  allowed_roles: string[] | null
+  subcommittee_id: string | null
+  is_system: boolean
+  created_at: string
+  updated_at: string
+  subcommittee?: { id: string; name: string } | null
+  members?: Array<{ id: string; user_id: string; profile?: { id: string; full_name: string } | null }>
 }
 
 export interface Document {
@@ -78,8 +94,15 @@ export interface Document {
   // the item's current meeting, not the meeting it was originally uploaded to.
   agenda_item_id: string | null
   meeting_id: string | null
+  // Which visibility group governs read access to this document (Documents
+  // module only — never gates meeting/minutes access, see Task 3 of the
+  // visibility-groups brief). resolution_id is plumbing only for now: no
+  // upload UI exists yet to actually attach a document to a resolution.
+  visibility_group_id: string | null
+  resolution_id: string | null
   uploader?: { full_name: string; email?: string } | null
   folder?: { id: string; name: string } | null
+  visibility_group?: { id: string; name: string } | null
 }
 
 export interface DocumentChunk {

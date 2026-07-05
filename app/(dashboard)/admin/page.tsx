@@ -7,6 +7,7 @@ import { formatDate } from '@/lib/utils'
 import { AdminUsersClient } from './admin-users-client'
 import { AdminAuditLog } from './admin-audit-log'
 import { AdminSeedClient } from './admin-seed-client'
+import { AdminVisibilityGroups } from './admin-visibility-groups'
 import { canManageUsers } from '@/lib/roles'
 
 export default async function AdminPage() {
@@ -35,6 +36,19 @@ export default async function AdminPage() {
 
   const { data: stats } = await supabase.rpc('get_stats').maybeSingle() ?? { data: null }
 
+  const [{ data: visibilityGroups }, { data: subcommittees }] = await Promise.all([
+    supabase
+      .from('visibility_groups')
+      .select(`
+        *,
+        subcommittee:subcommittees!subcommittee_id(id, name),
+        members:visibility_group_members(id, user_id, profile:profiles!user_id(id, full_name))
+      `)
+      .order('is_system', { ascending: false })
+      .order('name'),
+    supabase.from('subcommittees').select('id, name').order('name'),
+  ])
+
   return (
     <div>
       <Header title="Admin" description="User management and system audit logs." />
@@ -48,6 +62,15 @@ export default async function AdminPage() {
         <section>
           <h3 className="text-base font-semibold text-slate-800 mb-4">Users</h3>
           <AdminUsersClient profiles={profiles ?? []} />
+        </section>
+
+        <section>
+          <h3 className="text-base font-semibold text-slate-800 mb-4">Document Visibility Groups</h3>
+          <AdminVisibilityGroups
+            groups={visibilityGroups ?? []}
+            profiles={profiles ?? []}
+            subcommittees={subcommittees ?? []}
+          />
         </section>
 
         <section>
