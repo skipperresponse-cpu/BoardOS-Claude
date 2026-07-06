@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { formatDate, formatDateTime, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS } from '@/lib/utils'
+import { formatDate, formatDateTime, meetingStatusColor, meetingStatusLabel } from '@/lib/utils'
 import { autoLockAgendaIfDeadlinePassed } from '@/lib/meetings/transition'
 import { canManageThisMeeting } from '@/lib/meetings/permissions'
 import { isAdminEquivalent } from '@/lib/roles'
@@ -57,7 +57,7 @@ export default async function MeetingDetailPage({ params }: Props) {
       .eq('current_meeting_id', id)
       .order('display_order')
       .order('created_at'),
-    supabase.from('meeting_attendees').select('*, profile:profiles!user_id(id, full_name, role)').eq('meeting_id', id),
+    supabase.from('meeting_attendees').select('*, profile:profiles!user_id(id, full_name, role), subcommittee_member:subcommittee_members!subcommittee_member_id(id, external_name, external_affiliation)').eq('meeting_id', id),
     supabase.from('meeting_guests').select('*').eq('meeting_id', id),
     supabase
       .from('meeting_delegations')
@@ -95,15 +95,16 @@ export default async function MeetingDetailPage({ params }: Props) {
   // For the AI minutes prompt: prefer confirmed attendance over the legacy
   // frozen snapshot. "Present" = anyone not explicitly marked absent (covers
   // the common case where attendance hasn't been confirmed yet).
+  const attendeeName = (a: (typeof attendeesList)[number]) => a.profile?.full_name ?? a.subcommittee_member?.external_name ?? '—'
   const attendeeNames = hasNewAttendance
     ? [
-        ...attendeesList.filter((a) => a.attended !== false).map((a) => a.profile?.full_name ?? '—'),
+        ...attendeesList.filter((a) => a.attended !== false).map(attendeeName),
         ...guestsList.filter((g) => g.attended !== false).map((g) => g.name),
       ]
     : (legacyAttendeeNames ?? [])
   const absentNames = hasNewAttendance
     ? [
-        ...attendeesList.filter((a) => a.attended === false).map((a) => a.profile?.full_name ?? '—'),
+        ...attendeesList.filter((a) => a.attended === false).map(attendeeName),
         ...guestsList.filter((g) => g.attended === false).map((g) => g.name),
       ]
     : (meeting.absentees_json as string[] | null ?? [])
@@ -116,7 +117,7 @@ export default async function MeetingDetailPage({ params }: Props) {
       <Header
         title={meeting.title}
         description={formatDate(meeting.meeting_date)}
-        action={<Badge className={MEETING_STATUS_COLORS[meeting.status] ?? ''}>{MEETING_STATUS_LABELS[meeting.status] ?? meeting.status}</Badge>}
+        action={<Badge className={meetingStatusColor(meeting.status, meeting.is_in_progress)}>{meetingStatusLabel(meeting.status, meeting.is_in_progress)}</Badge>}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -134,6 +135,7 @@ export default async function MeetingDetailPage({ params }: Props) {
                 <AgendaItemsClient
                   meetingId={id}
                   meetingStatus={meeting.status}
+                  isInProgress={meeting.is_in_progress}
                   items={agendaItemsList}
                   userRole={profile?.role ?? 'viewer'}
                   currentProfileId={profile?.id ?? ''}
@@ -160,7 +162,7 @@ export default async function MeetingDetailPage({ params }: Props) {
               meetingId={id}
               attendees={attendeesList}
               guests={guestsList}
-              canManage={canManageMeeting}
+              canManage={canManageMeeting && meeting.is_in_progress}
             />
           )}
         </div>
@@ -182,11 +184,16 @@ export default async function MeetingDetailPage({ params }: Props) {
                 </div>
               )}
               <div>
-                <p className="text-xs text-slate-500 mb-1">Internal Attendees</p>
+                <p className="text-xs text-slate-500 mb-1">Attendees</p>
                 {hasNewAttendance ? (
                   attendeesList.length > 0 ? (
                     <ul className="text-sm text-slate-800 space-y-0.5">
-                      {attendeesList.map((a) => <li key={a.id}>{a.profile?.full_name ?? '—'}</li>)}
+                      {attendeesList.map((a) => (
+                        <li key={a.id}>
+                          {attendeeName(a)}
+                          {a.attendance_requirement === 'optional' && <span className="text-slate-400 text-xs"> (optional)</span>}
+                        </li>
+                      ))}
                     </ul>
                   ) : <p className="text-sm text-slate-400">None recorded</p>
                 ) : legacyAttendeeNames?.length ? (

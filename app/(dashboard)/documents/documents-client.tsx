@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { DOCUMENT_CATEGORIES, formatDate, cn } from '@/lib/utils'
+import { DOCUMENT_CATEGORIES, formatDate, cn, todayDateString } from '@/lib/utils'
 import { canManageDocuments } from '@/lib/roles'
 import type { Document, DocumentCategory, DocumentFolder, VisibilityGroup, UserRole } from '@/types'
 import {
@@ -73,7 +73,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
     title: '',
     category: 'Policy' as DocumentCategory,
     description: '',
-    document_date: '',
+    document_date: todayDateString(),
     folder_id: generalFolderId,
     // Visibility follows the folder's default until the uploader explicitly
     // changes it (Task 2 — per-document override).
@@ -135,7 +135,7 @@ export function DocumentsClient({ documents: initialDocs, folders: initialFolder
 
   function resetForm() {
     setForm({
-      title: '', category: 'Policy', description: '', document_date: '',
+      title: '', category: 'Policy', description: '', document_date: todayDateString(),
       folder_id: generalFolder?.id ?? '',
       visibility_group_id: generalFolder?.default_visibility_group_id ?? '',
     })

@@ -19,7 +19,11 @@ export default async function MeetingsPage() {
       .from('meetings')
       .select('*, creator:profiles!created_by(full_name), subcommittee:subcommittees!subcommittee_id(id, name)')
       .order('meeting_date', { ascending: false }),
-    supabase.from('profiles').select('id, full_name, role').order('full_name'),
+    // Attendee checkbox source (Task 3's org-structure stub) — viewer has no
+    // meeting-participation role, so excluded here specifically. Board
+    // members/advisors/staff (administrator) come straight from profiles;
+    // subcommittee members (including external) layer on top per subcommittee.
+    supabase.from('profiles').select('id, full_name, role').neq('role', 'viewer').order('full_name'),
     supabase
       .from('subcommittees')
       .select('*, members:subcommittee_members(*, profile:profiles!user_id(id, full_name, role))')

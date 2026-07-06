@@ -2,28 +2,14 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 import { sendAgendaOpenReminder } from '@/lib/email/reminders'
 
-export const MEETING_STATUS_LADDER = [
-  'draft', 'agenda_open', 'agenda_locked', 'scheduled', 'held', 'minutes_drafted', 'minutes_approved',
-] as const
-
-export type LadderStatus = typeof MEETING_STATUS_LADDER[number]
-
-/** The one manual backward exception: agenda_locked -> agenda_open, President/Secretary only. */
-export function isManualReopenTransition(from: string, to: string): boolean {
-  return from === 'agenda_locked' && to === 'agenda_open'
-}
-
-export function isValidForwardTransition(from: string, to: string): boolean {
-  const fromIdx = MEETING_STATUS_LADDER.indexOf(from as LadderStatus)
-  const toIdx = MEETING_STATUS_LADDER.indexOf(to as LadderStatus)
-  if (fromIdx === -1 || toIdx === -1) return false
-  return toIdx === fromIdx + 1
-}
-
-/** A meeting can be cancelled from any status except the terminal ones. */
-export function canCancelFrom(status: string): boolean {
-  return status !== 'cancelled' && status !== 'minutes_approved'
-}
+// Pure ladder logic lives in lib/meetings/ladder.ts (no server-only imports,
+// safe from client components) — re-exported here so existing server-side
+// importers of this file don't need to change.
+export {
+  MEETING_STATUS_LADDER, isManualReopenTransition, isValidForwardTransition,
+  canCancelFrom, isBeforeHeld, isWithinAgendaReviewWindow,
+} from './ladder'
+export type { LadderStatus } from './ladder'
 
 /**
  * Applies a meeting status transition using the service client (bypasses RLS —
@@ -38,9 +24,16 @@ export async function applyMeetingTransition(
   actorProfileId?: string
 ) {
   const serviceSupabase = await createServiceClient()
+  // scheduled -> held is "Start Meeting": the meeting becomes actively
+  // in-progress (distinct from formally closed), which unlocks attendance
+  // check-off. Close Meeting later sets is_in_progress back to false without
+  // changing status — see /api/meetings/[id]/close.
+  const update: Record<string, unknown> = { status: toStatus }
+  if (toStatus === 'held') update.is_in_progress = true
+
   const { error } = await serviceSupabase
     .from('meetings')
-    .update({ status: toStatus })
+    .update(update)
     .eq('id', meetingId)
 
   if (error) throw new Error(error.message)

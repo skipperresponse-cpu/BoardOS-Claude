@@ -125,6 +125,7 @@ export interface Meeting {
   draft_minutes: string | null
   final_minutes: string | null
   status: MeetingStatus
+  is_in_progress: boolean
   agenda_deadline: string | null
   subcommittee_id: string | null
   created_by: string
@@ -170,14 +171,22 @@ export interface MeetingDelegation {
   granted_by?: { id: string; full_name: string } | null
 }
 
+export type AttendanceRequirement = 'required' | 'optional'
+
 export interface MeetingAttendee {
   id: string
   meeting_id: string
-  user_id: string
+  // Exactly one of user_id/subcommittee_member_id is set — external
+  // subcommittee members have no profile to point at (Task 3's org-structure
+  // stub), so subcommittee_member_id carries their name/affiliation instead.
+  user_id: string | null
+  subcommittee_member_id: string | null
+  attendance_requirement: AttendanceRequirement
   invited: boolean
   attended: boolean | null
   created_at: string
   profile?: { id: string; full_name: string; role: UserRole } | null
+  subcommittee_member?: { id: string; external_name: string | null; external_affiliation: string | null } | null
 }
 
 export interface MeetingGuest {

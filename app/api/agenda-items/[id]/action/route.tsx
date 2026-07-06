@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isAdminEquivalent } from '@/lib/roles'
 import { canManageThisMeeting } from '@/lib/meetings/permissions'
+import { isWithinAgendaReviewWindow } from '@/lib/meetings/transition'
 import { logAudit } from '@/lib/audit'
 
 export async function POST(
@@ -28,7 +29,7 @@ export async function POST(
 
   const { data: item } = await serviceSupabase
     .from('agenda_items')
-    .select('id, current_meeting_id, type')
+    .select('id, current_meeting_id, type, status')
     .eq('id', id)
     .single()
 
@@ -97,17 +98,22 @@ export async function POST(
   }
 
   // Defense in depth alongside RLS: an item currently attached to a meeting
-  // may only be reviewed while that meeting is in its review window. An
-  // unassigned depository item (current_meeting_id null) has no such window —
-  // president/secretary can reject it directly from the depository.
+  // may only be reviewed/edited/marked-discussed while that meeting hasn't
+  // been marked Held yet — real time throughout Agenda Open, Locked, and
+  // Scheduled, not gated to "only after lock." Once the meeting is Held, the
+  // window stays open for as long as Start Meeting has left it in progress
+  // (mark_discussed in particular only makes sense here), and closes for good
+  // once Close Meeting finalizes it. An unassigned depository item
+  // (current_meeting_id null) has no such window — president/secretary can
+  // reject it directly from the depository.
   if (item.current_meeting_id !== null) {
     const { data: meeting } = await serviceSupabase
       .from('meetings')
-      .select('status')
+      .select('status, is_in_progress')
       .eq('id', item.current_meeting_id)
       .single()
 
-    if (!meeting || !['agenda_locked', 'scheduled'].includes(meeting.status)) {
+    if (!meeting || !isWithinAgendaReviewWindow(meeting.status, meeting.is_in_progress)) {
       return NextResponse.json({ error: 'This meeting is not in its agenda review window' }, { status: 400 })
     }
   }
@@ -122,6 +128,9 @@ export async function POST(
       if (!editedTitle?.trim()) {
         return NextResponse.json({ error: 'editedTitle is required for edit_approve' }, { status: 400 })
       }
+      // Also doubles as the "edit an already-approved item" action — approved
+      // items stay editable by president/secretary right up until Held, same
+      // as the existing rule that agenda edits aren't locked at approval time.
       update = {
         status: 'edited_approved',
         title: editedTitle.trim(),
@@ -130,6 +139,12 @@ export async function POST(
       break
     case 'reject':
       update = { status: 'rejected' }
+      break
+    case 'mark_discussed':
+      if (item.status !== 'approved' && item.status !== 'edited_approved') {
+        return NextResponse.json({ error: 'Only approved items can be marked discussed' }, { status: 400 })
+      }
+      update = { status: 'discussed' }
       break
     case 'defer': {
       const toMeetingId = deferToMeetingId || null

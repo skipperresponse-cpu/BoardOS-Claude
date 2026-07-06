@@ -44,6 +44,29 @@ function AttendedToggle({ value, onChange, disabled }: { value: Attended; onChan
   )
 }
 
+// Guests get present-only tracking — never an "absent" state, since Close
+// Meeting's absentee logic only ever applies to required attendees. Clicking
+// toggles between present (true) and not-yet-confirmed (null); there is no
+// way to set a guest to false from this control.
+function GuestPresentToggle({ value, onChange, disabled }: { value: Attended; onChange: (v: boolean | null) => void; disabled: boolean }) {
+  if (disabled) {
+    return (
+      <Badge className={value === true ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}>
+        {value === true ? 'Present' : 'Not confirmed'}
+      </Badge>
+    )
+  }
+  return (
+    <button
+      onClick={() => onChange(value === true ? null : true)}
+      className={`p-1.5 rounded transition-colors ${value === true ? 'bg-green-100 text-green-700' : 'text-slate-300 hover:text-green-600 hover:bg-green-50'}`}
+      title={value === true ? 'Present (click to unmark)' : 'Mark present'}
+    >
+      <Check className="h-4 w-4" />
+    </button>
+  )
+}
+
 // Post-meeting confirmation of who was ACTUALLY present, distinct from who
 // was invited/listed. Shown once the meeting reaches Held (or later) as part
 // of moving toward minutes drafting — editable while canManage, read-only
@@ -63,7 +86,7 @@ export function AttendanceConfirmation({ meetingId, attendees: initialAttendees,
     if (!res.ok) router.refresh()
   }
 
-  async function setGuestAttended(guestId: string, attended: boolean) {
+  async function setGuestAttended(guestId: string, attended: boolean | null) {
     setGuests((prev) => prev.map((g) => g.id === guestId ? { ...g, attended } : g))
     const res = await fetch(`/api/meetings/${meetingId}/attendance`, {
       method: 'PATCH',
@@ -92,11 +115,17 @@ export function AttendanceConfirmation({ meetingId, attendees: initialAttendees,
       <CardContent className="space-y-3">
         {attendees.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Internal Attendees</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Attendees</p>
             <div className="divide-y divide-slate-100">
               {attendees.map((a) => (
                 <div key={a.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-sm text-slate-800">{a.profile?.full_name ?? '—'}</span>
+                  <span className="text-sm text-slate-800 flex items-center gap-1.5">
+                    {a.profile?.full_name ?? a.subcommittee_member?.external_name ?? '—'}
+                    {!a.profile && <Badge className="bg-amber-50 text-amber-700 text-[10px]">External</Badge>}
+                    <Badge className={a.attendance_requirement === 'required' ? 'bg-slate-100 text-slate-600 text-[10px]' : 'bg-slate-50 text-slate-400 text-[10px]'}>
+                      {a.attendance_requirement}
+                    </Badge>
+                  </span>
                   <AttendedToggle value={a.attended} onChange={(v) => setAttendeeAttended(a.id, v)} disabled={!canManage} />
                 </div>
               ))}
@@ -113,7 +142,7 @@ export function AttendanceConfirmation({ meetingId, attendees: initialAttendees,
                     <span className="text-sm text-slate-800">{g.name}</span>
                     {g.affiliation && <span className="text-xs text-slate-400 ml-2">{g.affiliation}</span>}
                   </div>
-                  <AttendedToggle value={g.attended} onChange={(v) => setGuestAttended(g.id, v)} disabled={!canManage} />
+                  <GuestPresentToggle value={g.attended} onChange={(v) => setGuestAttended(g.id, v)} disabled={!canManage} />
                 </div>
               ))}
             </div>

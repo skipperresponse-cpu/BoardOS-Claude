@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ACTION_STATUS_COLORS, formatDate, isOverdue, cn } from '@/lib/utils'
+import { ACTION_STATUS_COLORS, formatDate, isOverdue, cn, todayDateString } from '@/lib/utils'
 import { canManageActionItems } from '@/lib/roles'
 import type { ActionItem, ActionItemStatus, UserRole } from '@/types'
 import { CheckSquare, Plus, AlertCircle } from 'lucide-react'
@@ -27,7 +27,7 @@ export function ActionItemsClient({ actionItems: initial, profiles, userRole, cu
   const [ownerFilter, setOwnerFilter] = useState<string>('all')
   const [showCreate, setShowCreate] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', owner_user_id: '', due_date: '', notes: '' })
+  const [form, setForm] = useState({ title: '', description: '', owner_user_id: '', due_date: todayDateString(), notes: '' })
   const supabase = createClient()
 
   const filtered = items.filter((item) => {
@@ -55,7 +55,7 @@ export function ActionItemsClient({ actionItems: initial, profiles, userRole, cu
 
     if (newItem) {
       setItems((prev) => [newItem, ...prev])
-      setForm({ title: '', description: '', owner_user_id: '', due_date: '', notes: '' })
+      setForm({ title: '', description: '', owner_user_id: '', due_date: todayDateString(), notes: '' })
       setShowCreate(false)
     }
     setSaving(false)

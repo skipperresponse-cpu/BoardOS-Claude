@@ -9,10 +9,10 @@ import { Select } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ACTION_STATUS_COLORS, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS, formatDate, formatDateTime, cn } from '@/lib/utils'
+import { ACTION_STATUS_COLORS, meetingStatusColor, meetingStatusLabel, formatDate, formatDateTime, cn, todayDateString } from '@/lib/utils'
 import { isAdminEquivalent } from '@/lib/roles'
 import type { Meeting, ActionItem, ActionItemStatus, UserRole, AgendaItem } from '@/types'
-import { Sparkles, Save, Plus, CheckSquare, ArrowRight, Undo2, Ban } from 'lucide-react'
+import { Sparkles, Save, Plus, CheckSquare, ArrowRight, Undo2, Ban, Square, CheckCircle2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Props {
@@ -78,14 +78,16 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
   const [savingMinutes, setSavingMinutes] = useState(false)
   const [approvingMinutes, setApprovingMinutes] = useState(false)
   const [showAddAction, setShowAddAction] = useState(false)
-  const [newAction, setNewAction] = useState({ title: '', description: '', owner_user_id: '', due_date: '' })
+  const [newAction, setNewAction] = useState({ title: '', description: '', owner_user_id: '', due_date: todayDateString() })
   const [savingAction, setSavingAction] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
   const [transitioning, setTransitioning] = useState(false)
+  const [closing, setClosing] = useState(false)
   const isAdmin = canManageThisMeeting
   const isHeldOrLater = ['held', 'minutes_drafted', 'minutes_approved'].includes(meeting.status)
+  const meetingInProgress = meeting.status === 'held' && meeting.is_in_progress
   const canCancel = meeting.status !== 'cancelled' && meeting.status !== 'minutes_approved'
 
   async function transitionTo(toStatus: string) {
@@ -101,6 +103,19 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
     } else {
       const data = await res.json().catch(() => ({}))
       alert(data.error ?? 'Transition failed')
+    }
+  }
+
+  async function closeMeeting() {
+    if (!confirm('Close this meeting? Any required attendee not marked present will be recorded as absent.')) return
+    setClosing(true)
+    const res = await fetch(`/api/meetings/${meeting.id}/close`, { method: 'POST' })
+    setClosing(false)
+    if (res.ok) {
+      router.refresh()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      alert(data.error ?? 'Failed to close meeting')
     }
   }
 
@@ -200,7 +215,7 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
 
     if (newItem) {
       setActionItems((prev) => [...prev, newItem])
-      setNewAction({ title: '', description: '', owner_user_id: '', due_date: '' })
+      setNewAction({ title: '', description: '', owner_user_id: '', due_date: todayDateString() })
       setShowAddAction(false)
     }
     setSavingAction(false)
@@ -223,8 +238,8 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
       {isAdmin && (
         <Card className="p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className={cn(MEETING_STATUS_COLORS[meeting.status])}>
-              {MEETING_STATUS_LABELS[meeting.status] ?? meeting.status}
+            <Badge className={cn(meetingStatusColor(meeting.status, meeting.is_in_progress))}>
+              {meetingStatusLabel(meeting.status, meeting.is_in_progress)}
             </Badge>
 
             {meeting.status === 'draft' && (
@@ -248,7 +263,13 @@ export function MeetingDetailClient({ meeting, actionItems: initialItems, profil
 
             {meeting.status === 'scheduled' && (
               <Button size="sm" disabled={transitioning} onClick={() => transitionTo('held')}>
-                <ArrowRight className="h-3.5 w-3.5" /> Mark as Held
+                <Square className="h-3.5 w-3.5" /> Start Meeting
+              </Button>
+            )}
+
+            {meetingInProgress && (
+              <Button size="sm" disabled={closing} onClick={closeMeeting}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> {closing ? 'Closing...' : 'Close Meeting'}
               </Button>
             )}
 

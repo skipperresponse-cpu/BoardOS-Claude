@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { canSubmitAgendaItems } from '@/lib/roles'
+import { canSubmitAgendaItems, isAdminEquivalent } from '@/lib/roles'
+import { logAudit } from '@/lib/audit'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -63,6 +64,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'This meeting is not accepting agenda submissions' }, { status: 400 })
   }
 
+  // President/Secretary are the approvers — requiring them to approve their
+  // own submission is redundant, so their own items skip the queue entirely
+  // and land already approved.
+  const selfApproves = isAdminEquivalent(profile.role)
+
   const { data: item, error } = await serviceSupabase
     .from('agenda_items')
     .insert({
@@ -71,7 +77,7 @@ export async function POST(request: NextRequest) {
       submitted_by: profile.id,
       title: title.trim(),
       description: description?.trim() || null,
-      status: 'submitted',
+      status: selfApproves ? 'approved' : 'submitted',
     })
     .select()
     .single()
@@ -84,6 +90,10 @@ export async function POST(request: NextRequest) {
     to_meeting_id: meetingId,
     reason: 'initial_submission',
   })
+
+  if (selfApproves) {
+    await logAudit(profile.id, 'agenda_item_self_approved', 'agenda_item', item.id, {})
+  }
 
   return NextResponse.json(item, { status: 201 })
 }

@@ -8,13 +8,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { canSubmitAgendaItems } from '@/lib/roles'
+import { isWithinAgendaReviewWindow } from '@/lib/meetings/ladder'
 import type { AgendaItem, Document, MeetingStatus, UserRole } from '@/types'
-import { Plus, Check, Pencil, Clock, X, Paperclip, Download, Trash2 } from 'lucide-react'
+import { Plus, Check, Pencil, Clock, X, Paperclip, Download, Trash2, MessageSquareCheck } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 interface Props {
   meetingId: string
   meetingStatus: MeetingStatus
+  // Whether Start Meeting has put a Held meeting actively in progress —
+  // Close Meeting flips this back to false without changing status.
+  isInProgress: boolean
   items: AgendaItem[]
   userRole: UserRole
   currentProfileId: string
@@ -28,6 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
   submitted: 'bg-blue-100 text-blue-700',
   approved: 'bg-green-100 text-green-700',
   edited_approved: 'bg-teal-100 text-teal-700',
+  discussed: 'bg-indigo-100 text-indigo-700',
   deferred: 'bg-amber-100 text-amber-700',
   rejected: 'bg-red-100 text-red-700',
   pending: 'bg-slate-100 text-slate-600',
@@ -106,7 +111,7 @@ function AttachmentsSection({
   )
 }
 
-export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItems, userRole, currentProfileId, canManageThisMeeting }: Props) {
+export function AgendaItemsClient({ meetingId, meetingStatus, isInProgress, items: initialItems, userRole, currentProfileId, canManageThisMeeting }: Props) {
   const [items, setItems] = useState(initialItems)
   const [showSubmit, setShowSubmit] = useState(false)
   const [form, setForm] = useState({ title: '', description: '' })
@@ -118,7 +123,14 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
   const supabase = createClient()
 
   const canSubmit = canSubmitAgendaItems(userRole) && meetingStatus === 'agenda_open'
-  const canReview = canManageThisMeeting && ['agenda_locked', 'scheduled'].includes(meetingStatus)
+  // Real time throughout Agenda Open, Locked, and Scheduled — not gated to
+  // "only after lock" — right up until the meeting is marked Held, PLUS the
+  // window Start Meeting reopens (Held + in progress) so items can still be
+  // approved/edited/marked discussed while the meeting is actually running.
+  // Also governs post-approval edits, matching the existing "edits allowed
+  // until Held" rule rather than locking wording in at approval time.
+  const canReview = canManageThisMeeting && isWithinAgendaReviewWindow(meetingStatus, isInProgress)
+  const meetingInProgress = meetingStatus === 'held' && isInProgress
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -248,7 +260,7 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
                   <Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} />
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => handleAction(item.id, 'edit_approve', { editedTitle: editForm.title, editedDescription: editForm.description })}>
-                      Save & Approve
+                      {item.status === 'submitted' ? 'Save & Approve' : 'Save'}
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>Cancel</Button>
                   </div>
@@ -277,6 +289,21 @@ export function AgendaItemsClient({ meetingId, meetingStatus, items: initialItem
                       <Button size="sm" variant="outline" onClick={() => handleAction(item.id, 'reject')} title="Reject">
                         <X className="h-3.5 w-3.5" />
                       </Button>
+                    </div>
+                  )}
+                  {/* Approved items stay editable up until Held — not locked
+                      in at approval time, matching the existing rule that
+                      agenda edits are allowed any time before the meeting. */}
+                  {canReview && (item.status === 'approved' || item.status === 'edited_approved') && (
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      <Button size="sm" variant="outline" onClick={() => { setEditingId(item.id); setEditForm({ title: item.title, description: item.description ?? '' }) }} title="Edit">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {meetingInProgress && (
+                        <Button size="sm" variant="outline" onClick={() => handleAction(item.id, 'mark_discussed')} title="Mark Discussed">
+                          <MessageSquareCheck className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>

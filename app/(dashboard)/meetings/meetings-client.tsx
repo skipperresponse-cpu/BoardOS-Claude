@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
-import { formatDate, cn, MEETING_STATUS_COLORS, MEETING_STATUS_LABELS } from '@/lib/utils'
+import { formatDate, cn, meetingStatusColor, meetingStatusLabel, todayDateString, MEETING_TIME_OPTIONS, DEFAULT_MEETING_TIME, formatTimeOption } from '@/lib/utils'
 import { canManageMeetings } from '@/lib/roles'
 import type { Meeting, Subcommittee, UserRole } from '@/types'
 import { CalendarDays, Plus, Search, X } from 'lucide-react'
@@ -17,12 +17,36 @@ import Link from 'next/link'
 
 interface ProfileOption { id: string; full_name: string; role: string }
 interface GuestForm { name: string; affiliation: string; email: string }
+type Requirement = 'required' | 'optional'
 
 interface Props {
   meetings: Meeting[]
   profiles: ProfileOption[]
   subcommittees: Subcommittee[]
   userRole: UserRole
+}
+
+const BOARD_ROLES = ['president', 'secretary', 'treasurer', 'board_member']
+
+function RequirementToggle({ value, onChange }: { value: Requirement; onChange: (v: Requirement) => void }) {
+  return (
+    <div className="flex rounded border border-slate-200 overflow-hidden text-[10px] flex-shrink-0">
+      <button
+        type="button"
+        onClick={() => onChange('required')}
+        className={cn('px-1.5 py-0.5', value === 'required' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}
+      >
+        Required
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('optional')}
+        className={cn('px-1.5 py-0.5 border-l border-slate-200', value === 'optional' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}
+      >
+        Optional
+      </button>
+    </div>
+  )
 }
 
 export function MeetingsClient({ meetings: initialMeetings, profiles, subcommittees, userRole }: Props) {
@@ -33,11 +57,17 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
   const [error, setError] = useState('')
   const [form, setForm] = useState({
     title: '',
-    meeting_date: '',
+    meeting_date: todayDateString(),
+    meeting_time: DEFAULT_MEETING_TIME,
     agenda_deadline: '',
     subcommittee_id: '',
   })
-  const [attendeeIds, setAttendeeIds] = useState<Set<string>>(new Set())
+  // Internal attendees keyed by profile id; external ones (subcommittee
+  // members with no system access) keyed by their subcommittee_members row
+  // id instead, since they have no profile to point at — meeting_attendees
+  // has a column for each (user_id vs subcommittee_member_id).
+  const [internalAttendees, setInternalAttendees] = useState<Map<string, Requirement>>(new Map())
+  const [externalAttendees, setExternalAttendees] = useState<Map<string, Requirement>>(new Map())
   const [guests, setGuests] = useState<GuestForm[]>([])
   const router = useRouter()
   const supabase = createClient()
@@ -46,20 +76,39 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
     m.title.toLowerCase().includes(search.toLowerCase())
   )
 
+  const selectedSubcommittee = subcommittees.find((s) => s.id === form.subcommittee_id)
+  const externalMembers = (selectedSubcommittee?.members ?? []).filter((m) => !m.user_id)
+
   function selectSubcommittee(subcommitteeId: string) {
     setForm({ ...form, subcommittee_id: subcommitteeId })
-    // Auto-populate from the subcommittee's current internal members — manual
-    // add/remove afterwards is still allowed, this is just the starting set.
+    // Auto-populate from the subcommittee's current roster (internal +
+    // external) — manual add/remove afterwards is still allowed, this is
+    // just the starting set. Defaults to required.
     const sub = subcommittees.find((s) => s.id === subcommitteeId)
-    const internalIds = (sub?.members ?? []).map((m) => m.user_id).filter((id): id is string => !!id)
-    setAttendeeIds(new Set(internalIds))
+    const internal = new Map<string, Requirement>()
+    const external = new Map<string, Requirement>()
+    for (const m of sub?.members ?? []) {
+      if (m.user_id) internal.set(m.user_id, 'required')
+      else external.set(m.id, 'required')
+    }
+    setInternalAttendees(internal)
+    setExternalAttendees(external)
   }
 
-  function toggleAttendee(profileId: string) {
-    setAttendeeIds((prev) => {
-      const next = new Set(prev)
+  function toggleInternalAttendee(profileId: string) {
+    setInternalAttendees((prev) => {
+      const next = new Map(prev)
       if (next.has(profileId)) next.delete(profileId)
-      else next.add(profileId)
+      else next.set(profileId, 'required')
+      return next
+    })
+  }
+
+  function toggleExternalAttendee(memberId: string) {
+    setExternalAttendees((prev) => {
+      const next = new Map(prev)
+      if (next.has(memberId)) next.delete(memberId)
+      else next.set(memberId, 'required')
       return next
     })
   }
@@ -77,8 +126,9 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
   }
 
   function resetForm() {
-    setForm({ title: '', meeting_date: '', agenda_deadline: '', subcommittee_id: '' })
-    setAttendeeIds(new Set())
+    setForm({ title: '', meeting_date: todayDateString(), meeting_time: DEFAULT_MEETING_TIME, agenda_deadline: '', subcommittee_id: '' })
+    setInternalAttendees(new Map())
+    setExternalAttendees(new Map())
     setGuests([])
     setError('')
   }
@@ -86,8 +136,8 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (attendeeIds.size === 0) {
-      setError('At least one internal attendee is required.')
+    if (internalAttendees.size === 0 && externalAttendees.size === 0) {
+      setError('At least one attendee is required.')
       return
     }
     const validGuests = guests.filter((g) => g.name.trim())
@@ -101,7 +151,7 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
         .from('meetings')
         .insert({
           title: form.title,
-          meeting_date: form.meeting_date,
+          meeting_date: `${form.meeting_date}T${form.meeting_time}`,
           agenda_deadline: form.agenda_deadline || null,
           subcommittee_id: form.subcommittee_id || null,
           agenda_json: [],
@@ -113,9 +163,14 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
 
       if (meetingErr) throw meetingErr
 
-      const attendeeRows = [...attendeeIds].map((userId) => ({
-        meeting_id: meeting.id, user_id: userId, invited: true, attended: null,
-      }))
+      const attendeeRows = [
+        ...[...internalAttendees].map(([userId, requirement]) => ({
+          meeting_id: meeting.id, user_id: userId, attendance_requirement: requirement, invited: true, attended: null,
+        })),
+        ...[...externalAttendees].map(([memberId, requirement]) => ({
+          meeting_id: meeting.id, subcommittee_member_id: memberId, attendance_requirement: requirement, invited: true, attended: null,
+        })),
+      ]
       const { error: attendeesErr } = await supabase.from('meeting_attendees').insert(attendeeRows)
       if (attendeesErr) throw attendeesErr
 
@@ -169,7 +224,19 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
               </div>
               <div>
                 <Label htmlFor="m-date">Date & Time *</Label>
-                <Input id="m-date" type="datetime-local" value={form.meeting_date} onChange={(e) => setForm({ ...form, meeting_date: e.target.value })} required />
+                <div className="flex gap-2">
+                  <Input id="m-date" type="date" value={form.meeting_date} onChange={(e) => setForm({ ...form, meeting_date: e.target.value })} required className="flex-1" />
+                  <Select
+                    aria-label="Meeting time"
+                    value={form.meeting_time}
+                    onChange={(e) => setForm({ ...form, meeting_time: e.target.value })}
+                    className="w-32 flex-shrink-0"
+                  >
+                    {MEETING_TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{formatTimeOption(t)}</option>
+                    ))}
+                  </Select>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -194,22 +261,70 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
             </div>
 
             <div>
-              <Label>Internal Attendees * (at least one required)</Label>
-              <div className="mt-1 max-h-48 overflow-y-auto border border-slate-200 rounded-md p-2 space-y-1">
-                {profiles.map((p) => (
-                  <label key={p.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={attendeeIds.has(p.id)}
-                      onChange={() => toggleAttendee(p.id)}
-                      className="rounded border-slate-300"
-                    />
-                    <span className="text-slate-800">{p.full_name}</span>
-                    <span className="text-xs text-slate-400">{p.role}</span>
-                  </label>
-                ))}
+              <Label>Attendees * (at least one required)</Label>
+              <div className="mt-1 max-h-64 overflow-y-auto border border-slate-200 rounded-md p-2 space-y-3">
+                {(['Board Members', 'Advisors', 'Staff'] as const).map((groupLabel) => {
+                  const groupProfiles = profiles.filter((p) =>
+                    groupLabel === 'Board Members' ? BOARD_ROLES.includes(p.role)
+                    : groupLabel === 'Advisors' ? p.role === 'advisor'
+                    : p.role === 'administrator'
+                  )
+                  if (groupProfiles.length === 0) return null
+                  return (
+                    <div key={groupLabel}>
+                      <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{groupLabel}</p>
+                      {groupProfiles.map((p) => {
+                        const requirement = internalAttendees.get(p.id)
+                        return (
+                          <div key={p.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 text-sm">
+                            <input
+                              type="checkbox"
+                              id={`attendee-${p.id}`}
+                              checked={internalAttendees.has(p.id)}
+                              onChange={() => toggleInternalAttendee(p.id)}
+                              className="rounded border-slate-300 cursor-pointer"
+                            />
+                            <label htmlFor={`attendee-${p.id}`} className="text-slate-800 flex-1 min-w-0 truncate cursor-pointer">{p.full_name}</label>
+                            {requirement && (
+                              <RequirementToggle value={requirement} onChange={(v) => setInternalAttendees((prev) => new Map(prev).set(p.id, v))} />
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+
+                {externalMembers.length > 0 && (
+                  <div>
+                    <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                      {selectedSubcommittee?.name} — External Members
+                    </p>
+                    {externalMembers.map((m) => {
+                      const requirement = externalAttendees.get(m.id)
+                      return (
+                        <div key={m.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 text-sm">
+                          <input
+                            type="checkbox"
+                            id={`ext-attendee-${m.id}`}
+                            checked={externalAttendees.has(m.id)}
+                            onChange={() => toggleExternalAttendee(m.id)}
+                            className="rounded border-slate-300 cursor-pointer"
+                          />
+                          <label htmlFor={`ext-attendee-${m.id}`} className="text-slate-800 flex-1 min-w-0 truncate cursor-pointer">
+                            {m.external_name}
+                            <Badge className="ml-1.5 bg-amber-50 text-amber-700 text-[10px]">External</Badge>
+                          </label>
+                          {requirement && (
+                            <RequirementToggle value={requirement} onChange={(v) => setExternalAttendees((prev) => new Map(prev).set(m.id, v))} />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-500 mt-1">{attendeeIds.size} selected</p>
+              <p className="text-xs text-slate-500 mt-1">{internalAttendees.size + externalAttendees.size} selected</p>
             </div>
 
             <div>
@@ -264,8 +379,8 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
                   <p className="font-medium text-slate-900 text-sm truncate">{m.title}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{formatDate(m.meeting_date)}</p>
                 </div>
-                <Badge className={MEETING_STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
-                  {MEETING_STATUS_LABELS[m.status] ?? m.status}
+                <Badge className={meetingStatusColor(m.status, m.is_in_progress)}>
+                  {meetingStatusLabel(m.status, m.is_in_progress)}
                 </Badge>
               </Link>
             ))}
@@ -288,8 +403,8 @@ export function MeetingsClient({ meetings: initialMeetings, profiles, subcommitt
                     <td className="px-6 py-4 font-medium text-slate-900">{m.title}</td>
                     <td className="px-6 py-4 text-slate-500">{formatDate(m.meeting_date)}</td>
                     <td className="px-6 py-4 hidden md:table-cell">
-                      <Badge className={MEETING_STATUS_COLORS[m.status] ?? 'bg-slate-100 text-slate-600'}>
-                        {MEETING_STATUS_LABELS[m.status] ?? m.status}
+                      <Badge className={meetingStatusColor(m.status, m.is_in_progress)}>
+                        {meetingStatusLabel(m.status, m.is_in_progress)}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-right">

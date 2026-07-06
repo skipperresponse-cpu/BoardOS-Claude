@@ -28,11 +28,16 @@ export async function PATCH(
   }
 
   const { type, id: rowId, attended } = await request.json()
-  if (!type || !rowId || typeof attended !== 'boolean') {
+  if (!type || !rowId || (typeof attended !== 'boolean' && attended !== null)) {
     return NextResponse.json({ error: 'type, id, and attended are required' }, { status: 400 })
   }
   if (type !== 'attendee' && type !== 'guest') {
     return NextResponse.json({ error: 'type must be "attendee" or "guest"' }, { status: 400 })
+  }
+  // Guests are present-only — Close Meeting's absentee logic never touches
+  // them, so the manual toggle can't put one in an "absent" state either.
+  if (type === 'guest' && attended === false) {
+    return NextResponse.json({ error: 'Guests cannot be marked absent' }, { status: 400 })
   }
 
   const serviceSupabase = await createServiceClient()

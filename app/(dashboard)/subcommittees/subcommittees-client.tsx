@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { canManageSubcommittees } from '@/lib/roles'
-import { formatDate } from '@/lib/utils'
+import { formatDate, todayDateString } from '@/lib/utils'
 import type { Subcommittee, UserRole } from '@/types'
 import { Plus, Trash2, ChevronDown, ChevronUp, UserPlus, X } from 'lucide-react'
 
@@ -248,7 +248,7 @@ export function SubcommitteesClient({ subcommittees: initial, profiles, userRole
     setSubcommittees(initial)
   }
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ name: '', term_start: '', term_end: '', chair_user_id: '' })
+  const [form, setForm] = useState({ name: '', term_start: todayDateString(), term_end: '', chair_user_id: '' })
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
@@ -267,7 +267,7 @@ export function SubcommitteesClient({ subcommittees: initial, profiles, userRole
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to create subcommittee')
-      setForm({ name: '', term_start: '', term_end: '', chair_user_id: '' })
+      setForm({ name: '', term_start: todayDateString(), term_end: '', chair_user_id: '' })
       setShowCreate(false)
       router.refresh()
     } catch (err) {
